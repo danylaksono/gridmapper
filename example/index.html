@@ -413,6 +413,24 @@
             fill: #357abd;
         }
 
+        /* Edit mode visuals */
+        .grid-cell.editable {
+            cursor: move;
+        }
+
+        .grid-cell.dragging {
+            opacity: 0.6;
+            stroke: #111;
+            stroke-width: 2;
+        }
+
+        .ghost {
+            pointer-events: none;
+            opacity: 0.7;
+            stroke: #111;
+            stroke-dasharray: 4 3;
+        }
+
         .centroid {
             fill: #e74c3c;
             stroke: white;
@@ -615,6 +633,17 @@
                         </label>
                     </div>
                 </div>
+                <div class="control-section">
+                    <div class="control-section-title">Edit Mode</div>
+                    <div class="control-group">
+                        <label for="edit-mode">
+                            <input type="checkbox" id="edit-mode"> Enable visual edit mode
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <button id="reset-edits" class="reset-button" disabled>Reset Edits</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -656,6 +685,13 @@
         const fileUpload = document.getElementById('file-upload');
         const fileInfo = document.getElementById('file-info');
         const resetButton = document.getElementById('reset-data');
+        const editModeCheckbox = document.getElementById('edit-mode');
+        const resetEditsButton = document.getElementById('reset-edits');
+
+        // Edit mode state
+        let editModeEnabled = false;
+        let originalAssignmentsSnapshot = null; // deep clone of assignments when allocation completes
+        let hasEdits = false;
 
         // Map dimensions - calculate dynamically to fit viewport
         function calculateMapDimensions() {
@@ -991,6 +1027,26 @@
                     console.error(error);
                 }
             });
+
+            // Edit mode toggle
+            editModeCheckbox.addEventListener('change', (e) => {
+                editModeEnabled = !!e.target.checked;
+                statusText.textContent = editModeEnabled ? 'Edit mode enabled' : 'Edit mode disabled';
+                // Redraw grid so interactive handlers are attached/detached
+                if (currentResult) {
+                    drawGridCartogram(currentResult, currentGridType);
+                }
+            });
+
+            // Reset edits handler
+            resetEditsButton.addEventListener('click', () => {
+                if (!originalAssignmentsSnapshot || !currentResult) return;
+                currentResult.assignments = JSON.parse(JSON.stringify(originalAssignmentsSnapshot));
+                hasEdits = false;
+                resetEditsButton.disabled = true;
+                statusText.textContent = 'Edits reset to original allocation';
+                drawGridCartogram(currentResult, currentGridType);
+            });
         }
 
         async function allocateAndDraw() {
@@ -1015,6 +1071,15 @@
                 const result = await mapper.allocate(londonData, config);
                 currentResult = result;
                 currentGridType = config.gridType;
+
+                // Snapshot assignments so we can reset edits later
+                try {
+                    originalAssignmentsSnapshot = JSON.parse(JSON.stringify(result.assignments));
+                    hasEdits = false;
+                    resetEditsButton.disabled = true;
+                } catch (e) {
+                    originalAssignmentsSnapshot = null;
+                }
 
                 // Draw grid cartogram
                 drawGridCartogram(result, config.gridType);
@@ -1306,6 +1371,16 @@
                             hideTooltip();
                         });
 
+                    // Add edit drag handlers when edit mode is enabled
+                    if (editModeEnabled) {
+                        cell.classed('editable', true)
+                            .on('mousedown', function (event) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                startDragHex(assignment, event);
+                            });
+                    }
+
                     // Add label
                     g.append('text')
                         .attr('class', 'grid-label')
@@ -1313,6 +1388,94 @@
                         .attr('y', cy)
                         .text(assignment.name.length > 10 ? assignment.name.substring(0, 10) + '...' : assignment.name);
                 });
+
+                // --- Hex drag handlers ---
+                let draggingHex = null;
+                let ghostHex = null;
+                function startDragHex(assignment, startEvent) {
+                    draggingHex = assignment;
+                    const svgNode = svg.node();
+                    svgNode.style.cursor = 'grabbing';
+
+                    // Initial center of dragged hex
+                    const initXOff = (assignment.gridY % 2) ? 0.5 : 0;
+                    const initCx = offsetX + (assignment.gridX + initXOff) * scale;
+                    const initFlipped = rows - 1 - assignment.gridY;
+                    const initCy = offsetY + initFlipped * hexYSpacing * scale;
+
+                    // Create ghost hex
+                    ghostHex = g.append('path').attr('class', 'ghost').attr('d', hexagonPath(initCx, initCy, hexRadius)).attr('fill', '#ffffff');
+
+                    function onMove(e) {
+                        const [px, py] = d3.pointer(e, svg.node());
+                        // Find nearest cell
+                        let minDist = Infinity;
+                        let target = null;
+                        for (let r = 0; r < rows; r++) {
+                            for (let c = 0; c < cols; c++) {
+                                const xOff = (r % 2) ? 0.5 : 0;
+                                const ccx = offsetX + (c + xOff) * scale;
+                                const flippedRow = rows - 1 - r;
+                                const ccy = offsetY + flippedRow * hexYSpacing * scale;
+                                const d2 = (px - ccx) * (px - ccx) + (py - ccy) * (py - ccy);
+                                if (d2 < minDist) {
+                                    minDist = d2;
+                                    target = { gx: c, gy: r, cx: ccx, cy: ccy };
+                                }
+                            }
+                        }
+                        if (target && ghostHex) {
+                            ghostHex.attr('d', hexagonPath(target.cx, target.cy, hexRadius));
+                            ghostHex.datum(target);
+                        }
+                    }
+
+                    function onUp(e) {
+                        const target = ghostHex ? ghostHex.datum() : null;
+                        if (target) {
+                            // perform swap if needed
+                            const other = assignments.find(a => a.gridX === target.gx && a.gridY === target.gy);
+                            if (other && other !== draggingHex) {
+                                const oldX = draggingHex.gridX;
+                                const oldY = draggingHex.gridY;
+                                draggingHex.gridX = other.gridX;
+                                draggingHex.gridY = other.gridY;
+                                other.gridX = oldX;
+                                other.gridY = oldY;
+                            } else if (!other) {
+                                draggingHex.gridX = target.gx;
+                                draggingHex.gridY = target.gy;
+                            }
+                            hasEdits = true;
+                            resetEditsButton.disabled = false;
+                            statusText.textContent = 'Edited: manual reposition applied';
+                            // redraw
+                            drawGridCartogram(currentResult, currentGridType);
+                        }
+                        cleanup();
+                    }
+
+                    function onKey(e) {
+                        if (e.key === 'Escape') {
+                            cleanup();
+                            statusText.textContent = 'Edit cancelled';
+                        }
+                    }
+
+                    function cleanup() {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                        window.removeEventListener('keydown', onKey);
+                        if (ghostHex) ghostHex.remove();
+                        ghostHex = null;
+                        draggingHex = null;
+                        svg.node().style.cursor = null;
+                    }
+
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                    window.addEventListener('keydown', onKey);
+                }
             } else {
                 // Rectangular grid
                 const cellWidth = availableWidth / cols;
@@ -1340,6 +1503,16 @@
                             hideTooltip();
                         });
 
+                    // Editable drag handlers for rect cells
+                    if (editModeEnabled) {
+                        cell.classed('editable', true)
+                            .on('mousedown', function (event) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                startDragRect(assignment, event);
+                            });
+                    }
+
                     // Add label
                     g.append('text')
                         .attr('class', 'grid-label')
@@ -1366,6 +1539,85 @@
                         .attr('y2', padding + i * cellHeight)
                         .attr('stroke', '#ddd')
                         .attr('stroke-width', 0.5);
+                }
+                // --- Rect drag handlers ---
+                let draggingRect = null;
+                let ghostRect = null;
+                function startDragRect(assignment, startEvent) {
+                    draggingRect = assignment;
+                    const svgNode = svg.node();
+                    svgNode.style.cursor = 'grabbing';
+
+                    // Create ghost rect at initial center
+                    const initX = padding + assignment.gridX * cellWidth;
+                    const initY = padding + (rows - 1 - assignment.gridY) * cellHeight;
+                    ghostRect = g.append('rect').attr('class', 'ghost').attr('x', initX).attr('y', initY).attr('width', cellWidth).attr('height', cellHeight).attr('fill', '#ffffff');
+
+                    function onMove(e) {
+                        const [px, py] = d3.pointer(e, svg.node());
+                        // Find nearest cell
+                        let minDist = Infinity;
+                        let target = null;
+                        for (let r = 0; r < rows; r++) {
+                            for (let c = 0; c < cols; c++) {
+                                const ccx = padding + c * cellWidth + cellWidth / 2;
+                                const ccy = padding + (rows - 1 - r) * cellHeight + cellHeight / 2;
+                                const d2 = (px - ccx) * (px - ccx) + (py - ccy) * (py - ccy);
+                                if (d2 < minDist) {
+                                    minDist = d2;
+                                    target = { gx: c, gy: r, x: ccx - cellWidth / 2, y: ccy - cellHeight / 2 };
+                                }
+                            }
+                        }
+                        if (target && ghostRect) {
+                            ghostRect.attr('x', target.x).attr('y', target.y);
+                            ghostRect.datum(target);
+                        }
+                    }
+
+                    function onUp(e) {
+                        const target = ghostRect ? ghostRect.datum() : null;
+                        if (target) {
+                            const other = assignments.find(a => a.gridX === target.gx && a.gridY === target.gy);
+                            if (other && other !== draggingRect) {
+                                const oldX = draggingRect.gridX;
+                                const oldY = draggingRect.gridY;
+                                draggingRect.gridX = other.gridX;
+                                draggingRect.gridY = other.gridY;
+                                other.gridX = oldX;
+                                other.gridY = oldY;
+                            } else if (!other) {
+                                draggingRect.gridX = target.gx;
+                                draggingRect.gridY = target.gy;
+                            }
+                            hasEdits = true;
+                            resetEditsButton.disabled = false;
+                            statusText.textContent = 'Edited: manual reposition applied';
+                            drawGridCartogram(currentResult, currentGridType);
+                        }
+                        cleanup();
+                    }
+
+                    function onKey(e) {
+                        if (e.key === 'Escape') {
+                            cleanup();
+                            statusText.textContent = 'Edit cancelled';
+                        }
+                    }
+
+                    function cleanup() {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                        window.removeEventListener('keydown', onKey);
+                        if (ghostRect) ghostRect.remove();
+                        ghostRect = null;
+                        draggingRect = null;
+                        svg.node().style.cursor = null;
+                    }
+
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                    window.addEventListener('keydown', onKey);
                 }
                 // Note: Grid lines don't need flipping as they're drawn at fixed positions
             }
@@ -1443,7 +1695,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `london-grid-cartogram-${currentGridType}-${Date.now()}.geojson`;
+                a.download = `london-grid-cartogram-${currentGridType}${hasEdits ? '-edited' : ''}-${Date.now()}.geojson`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
