@@ -1,8 +1,12 @@
 # GridMapper
 
+[![npm version](https://img.shields.io/npm/v/gridmapper.svg)](https://www.npmjs.com/package/gridmapper) [![build](https://github.com/danylaksono/gridmapper/actions/workflows/release-please.yml/badge.svg)](https://github.com/danylaksono/gridmapper/actions) [![license](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE) [![stars](https://img.shields.io/github/stars/danylaksono/gridmapper.svg)](https://github.com/danylaksono/gridmapper/stargazers)
+
 A JavaScript library for allocating geographic points to a grid using Mixed Integer Programming (MIP). This library provides an optimized solution for spatial data visualization by mapping geographic coordinates to grid cells while preserving spatial relationships.
 
 ![](./gridmapper_demo.png)
+
+see the [example/](./example) directory for the interactive demo and usage example.
 
 ## Inspiration
 
@@ -10,7 +14,7 @@ This library is inspired by and builds upon the work of **Jo Wood's Grid Map All
 
 ## Features
 
-- **Simple API**: Matches the original Jo Wood library API for easy migration
+- **Simple API**: Easy-to-use allocation method
 - **Advanced API**: Extended features including:
   - Auto-calculation of grid dimensions based on aspect ratio
   - Principal Component Analysis (PCA) rotation for better alignment
@@ -327,7 +331,7 @@ Automatic changelog & versioning
 - If you prefer releases to be drafts, you can set `create-release: true` and `draft: true` in `.github/workflows/release-please.yml` inputs.
 ## License
 
-ISC
+This project is licensed under the ISC License — see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
@@ -335,3 +339,4 @@ ISC
 - Tom Larkworthy's [Mixed Integer/Linear Programming Solver](https://observablehq.com/@tomlarkworthy/mip) 
 - MIP Solver: [GLPK.js](https://github.com/jvail/glpk.js)
 
+© 2025 danylaksono

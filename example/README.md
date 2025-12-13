@@ -18,10 +18,7 @@ The `london-demo.html` file demonstrates the GridMapper API with London boroughs
 
 ### Running the Demo
 
-1. **Build the library** (if not already built):
-   ```bash
-   npm run build
-   ```
+1. **No local build required** — the demo imports the published `gridmapper` package from a CDN.
 
 2. **Serve the examples directory** with a web server (required for ES modules and CORS):
    
@@ -42,7 +39,7 @@ The `london-demo.html` file demonstrates the GridMapper API with London boroughs
 
 3. **Open in your browser**:
    ```
-   http://localhost:8000/london-demo.html
+   http://localhost:8000/index.html
    ```
 
 ### Data

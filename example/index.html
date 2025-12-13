@@ -6,15 +6,16 @@
     It shows the original map and grid cartogram side-by-side, allowing users
     to adjust configuration parameters and see instant updates.
     
-    To run this example:
-    1. Make sure you have built the library: npm run build
-    2. Serve this directory with a web server (required for ES modules and CORS):
-       - Python: python -m http.server 8000
-       - Node: npx http-server -p 8000
-       - Or use any other web server
-    3. Open http://localhost:8000/london-demo.html in your browser
+     To run this example:
+     1. No local build required — the example imports the published `gridmapper` package from a CDN.
+     2. Serve this directory with a web server (required for ES modules and CORS):
+         - Python: python -m http.server 8000
+         - Node: npx http-server -p 8000
+         - Or use any other web server
+     3. Open http://localhost:8000/index.html in your browser
 -->
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,7 +64,7 @@
             background: white;
             padding: 12px 16px;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
             margin-bottom: 12px;
             border: 1px solid #e5e7eb;
             flex-shrink: 0;
@@ -124,7 +125,7 @@
             background: white;
             padding: 12px 16px;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
             margin-bottom: 12px;
             border: 1px solid #e5e7eb;
             flex-shrink: 0;
@@ -310,7 +311,7 @@
             background: white;
             padding: 12px;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
             border: 1px solid #e5e7eb;
             display: flex;
             flex-direction: column;
@@ -337,7 +338,7 @@
             align-items: stretch;
             justify-content: stretch;
         }
-        
+
         .map-container svg {
             width: 100%;
             height: 100%;
@@ -372,7 +373,7 @@
             background: white;
             padding: 12px 16px;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
             font-size: 13px;
             color: #6b7280;
             border: 1px solid #e5e7eb;
@@ -474,7 +475,7 @@
             justify-content: center;
             font-size: 18px;
             user-select: none;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
             transition: all 0.2s;
             color: #374151;
         }
@@ -483,7 +484,7 @@
             background: #f9fafb;
             border-color: #9ca3af;
             transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .zoom-button:active {
@@ -507,7 +508,7 @@
         .export-button:hover:not(:disabled) {
             background: #357abd;
             transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .export-button:disabled {
@@ -537,7 +538,7 @@
         .reset-button:hover:not(:disabled) {
             background: #4b5563;
             transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .reset-button:disabled {
@@ -547,6 +548,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div id="error-container"></div>
@@ -615,7 +617,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="status" id="status">
             <strong>Status:</strong> <span id="status-text">Loading...</span>
             <button id="export-geojson" class="export-button" disabled>Export GeoJSON</button>
@@ -625,8 +627,8 @@
     <div class="tooltip" id="tooltip"></div>
 
     <script type="module">
-        // Import GridMapper and GLPK solver
-        import { GridMapper, GLPKSolver, createGridGeoJson, estimateParameters } from '../dist/gridmapper.esm.js';
+        // Import GridMapper and GLPK solver from the published package on a CDN
+        import { GridMapper, GLPKSolver, createGridGeoJson, estimateParameters } from 'https://cdn.jsdelivr.net/npm/gridmapper@latest/dist/gridmapper.esm.js';
         import glpk from 'https://cdn.jsdelivr.net/npm/glpk.js@4.0.2/dist/index.js';
 
         // Initialize
@@ -659,11 +661,11 @@
         function calculateMapDimensions() {
             const mapsContainer = document.querySelector('.maps-container');
             if (!mapsContainer) return { width: 500, height: 500 };
-            
+
             const containerRect = mapsContainer.getBoundingClientRect();
             const availableHeight = containerRect.height - 40; // Account for padding and header
             const availableWidth = (containerRect.width - 6) / 2; // Account for gap between maps
-            
+
             // Use the smaller dimension to ensure square maps fit
             const size = Math.min(availableWidth, availableHeight);
             return {
@@ -671,13 +673,13 @@
                 height: Math.max(300, Math.floor(size))
             };
         }
-        
+
         let mapDimensions = calculateMapDimensions();
-        
+
         function getMapWidth() {
             return mapDimensions.width;
         }
-        
+
         function getMapHeight() {
             return mapDimensions.height;
         }
@@ -703,7 +705,7 @@
             function fixRing(ring, shouldBeCounterClockwise) {
                 const area = ringArea(ring);
                 const isCounterClockwise = area < 0;
-                
+
                 if (shouldBeCounterClockwise && !isCounterClockwise) {
                     return ring.slice().reverse();
                 } else if (!shouldBeCounterClockwise && isCounterClockwise) {
@@ -717,7 +719,7 @@
 
             fixed.features = fixed.features.map(feature => {
                 const geometry = feature.geometry;
-                
+
                 if (geometry.type === 'Polygon') {
                     // First ring is exterior (should be counter-clockwise)
                     // Subsequent rings are holes (should be clockwise)
@@ -736,7 +738,7 @@
                         return polygon;
                     });
                 }
-                
+
                 return feature;
             });
 
@@ -753,7 +755,7 @@
             const processedData = geojson.features.map((feature, i) => {
                 const geometry = feature.geometry;
                 let centroid;
-                
+
                 if (geometry.type === 'Point') {
                     // Use point coordinates directly
                     centroid = {
@@ -785,14 +787,14 @@
                 } else {
                     throw new Error(`Unsupported geometry type: ${geometry.type}. Supported types: Point, Polygon, MultiPolygon`);
                 }
-                
+
                 // Extract name from properties or use id/index
-                const name = feature.properties?.name || 
-                            feature.properties?.NAME || 
-                            feature.properties?.id || 
-                            feature.id || 
-                            `Feature ${i + 1}`;
-                
+                const name = feature.properties?.name ||
+                    feature.properties?.NAME ||
+                    feature.properties?.id ||
+                    feature.id ||
+                    `Feature ${i + 1}`;
+
                 return {
                     id: feature.id || `feature_${i}`,
                     name: name,
@@ -818,19 +820,19 @@
         // Update UI controls with estimated parameters
         function updateUIControls(params) {
             isUpdatingParameters = true;
-            
+
             // Update rows and cols inputs
             rowsInput.value = params.rows;
             colsInput.value = params.cols;
-            
+
             // Update compactness slider
             const compactnessValue = parseFloat(params.compactness.toFixed(2));
             compactnessSlider.value = compactnessValue;
             document.getElementById('compactness-value').textContent = compactnessValue.toFixed(1);
-            
+
             // Update PCA rotation checkbox
             rotatePCAInput.checked = params.rotateByPCA || false;
-            
+
             isUpdatingParameters = false;
         }
 
@@ -838,9 +840,9 @@
         async function loadData(geojson, fileName = 'london.geojson') {
             // Fix winding order before processing
             const fixedGeoJson = fixGeoJsonWinding(geojson);
-            
+
             const { processedData, bounds } = processGeoJson(fixedGeoJson, fileName);
-            
+
             londonData = processedData;
             originalBounds = bounds;
             currentGeoJson = fixedGeoJson;
@@ -851,10 +853,10 @@
                     xAccessor: d => d.lon,
                     yAccessor: d => d.lat
                 });
-                
+
                 // Update UI controls with estimated parameters
                 updateUIControls(estimatedParams);
-                
+
                 statusText.textContent = `Auto-estimated: ${estimatedParams.rows}x${estimatedParams.cols} grid, compactness: ${estimatedParams.compactness.toFixed(2)}`;
             } catch (error) {
                 console.warn('Failed to estimate parameters:', error);
@@ -873,7 +875,7 @@
             try {
                 statusText.textContent = 'Loading GLPK solver...';
                 glpkInstance = await glpk();
-                
+
                 // Wait for DOM to be fully laid out, then recalculate map dimensions
                 await new Promise(resolve => {
                     requestAnimationFrame(() => {
@@ -883,13 +885,13 @@
                         });
                     });
                 });
-                
+
                 statusText.textContent = 'Loading London boroughs data...';
-                
+
                 // Load London GeoJSON
                 const response = await fetch('london.geojson');
                 const geojson = await response.json();
-                
+
                 await loadData(geojson, 'london.geojson');
 
                 // Setup event listeners
@@ -921,7 +923,7 @@
                 input.addEventListener('input', () => {
                     // Skip if we're updating parameters programmatically
                     if (isUpdatingParameters) return;
-                    
+
                     if (input.type === 'range') {
                         compactnessValue.textContent = compactnessSlider.value;
                     }
@@ -953,7 +955,7 @@
                     }
 
                     await loadData(geojson, file.name);
-                    
+
                     fileInfo.textContent = `Loaded: ${file.name} (${geojson.features.length} features)`;
                     isUsingDefaultData = false;
                     resetButton.disabled = false;
@@ -972,12 +974,12 @@
                 try {
                     statusText.textContent = 'Loading default data...';
                     errorContainer.innerHTML = '';
-                    
+
                     const response = await fetch('london.geojson');
                     const geojson = await response.json();
-                    
+
                     await loadData(geojson, 'london.geojson');
-                    
+
                     fileInfo.textContent = 'Using default: london.geojson';
                     isUsingDefaultData = true;
                     resetButton.disabled = true;
@@ -997,7 +999,7 @@
                 errorContainer.innerHTML = '';
 
                 const mapper = new GridMapper();
-                
+
                 const config = {
                     xAccessor: d => d.lon,
                     yAccessor: d => d.lat,
@@ -1036,7 +1038,7 @@
             // Get container dimensions - use a reasonable default if not available yet
             const containerNode = container.node();
             let mapWidth, mapHeight;
-            
+
             if (containerNode) {
                 const containerRect = containerNode.getBoundingClientRect();
                 mapWidth = containerRect.width || getMapWidth();
@@ -1045,7 +1047,7 @@
                 mapWidth = getMapWidth();
                 mapHeight = getMapHeight();
             }
-            
+
             const svg = container.append('svg')
                 .attr('width', '100%')
                 .attr('height', '100%')
@@ -1057,17 +1059,17 @@
             try {
                 // Calculate bounds from GeoJSON
                 const bounds = d3.geoBounds(geojson);
-                
+
                 // Check if bounds are valid
-                if (!bounds || !isFinite(bounds[0][0]) || !isFinite(bounds[0][1]) || 
+                if (!bounds || !isFinite(bounds[0][0]) || !isFinite(bounds[0][1]) ||
                     !isFinite(bounds[1][0]) || !isFinite(bounds[1][1])) {
                     throw new Error('Invalid GeoJSON bounds');
                 }
-                
+
                 const padding = 20;
                 projection = d3.geoMercator()
                     .fitExtent([[padding, padding], [mapWidth - padding, mapHeight - padding]], geojson);
-                    
+
                 // Fallback if fitExtent fails
                 if (!projection.scale() || !isFinite(projection.scale())) {
                     // Use fitSize as fallback
@@ -1112,12 +1114,12 @@
                     const pathData = path(d);
                     return pathData && pathData.length > 0;
                 })
-                .on('mouseover', function(event, d) {
+                .on('mouseover', function (event, d) {
                     d3.select(this).attr('fill', '#357abd');
                     const name = d.properties?.name || d.properties?.PROVINSI || d.id || 'Feature';
                     showTooltip(event, name);
                 })
-                .on('mouseout', function(event, d) {
+                .on('mouseout', function (event, d) {
                     d3.select(this).attr('fill', '#4a90e2');
                     hideTooltip();
                 });
@@ -1145,7 +1147,7 @@
                             return 0;
                         }
                     })
-                    .on('mouseover', function(event, d) {
+                    .on('mouseover', function (event, d) {
                         showTooltip(event, d.name);
                     })
                     .on('mouseout', hideTooltip);
@@ -1190,11 +1192,11 @@
         function drawGridCartogram(result, gridType = 'rect') {
             const container = d3.select('#grid-map');
             container.selectAll('*').remove();
-            
+
             // Get container dimensions - use a reasonable default if not available yet
             const containerNode = container.node();
             let mapWidth, mapHeight;
-            
+
             if (containerNode) {
                 const containerRect = containerNode.getBoundingClientRect();
                 mapWidth = containerRect.width || getMapWidth();
@@ -1203,13 +1205,13 @@
                 mapWidth = getMapWidth();
                 mapHeight = getMapHeight();
             }
-            
+
             const svg = container.append('svg')
                 .attr('width', '100%')
                 .attr('height', '100%')
                 .attr('viewBox', `0 0 ${mapWidth} ${mapHeight}`)
                 .attr('preserveAspectRatio', 'xMidYMid meet');
-            
+
             setupGridCartogramZoom(svg, container, result, gridType);
         }
 
@@ -1246,17 +1248,17 @@
                 // where 0.8660254037844386 = sqrt(3)/2
                 // In grid units: horizontal spacing = 1, vertical spacing = sqrt(3)/2
                 // With staggering, effective width = (cols - 1 + 0.5)
-                
+
                 const hexYSpacing = 0.8660254037844386; // sqrt(3)/2
-                
+
                 // Calculate scale factors to fit in available space
                 const scaleX = availableWidth / (cols - 1 + 0.5);
                 const scaleY = availableHeight / ((rows - 1) * hexYSpacing);
                 const scale = Math.min(scaleX, scaleY);
-                
+
                 // Hexagon radius (width = 2*radius, so radius = scale/2)
                 const hexRadius = scale / 2;
-                
+
                 // Calculate total space used and center
                 const totalHexWidth = (cols - 1 + 0.5) * scale;
                 const totalHexHeight = (rows - 1) * hexYSpacing * scale;
@@ -1281,7 +1283,7 @@
                 assignments.forEach((assignment, i) => {
                     const row = assignment.gridY;
                     const col = assignment.gridX;
-                    
+
                     // Calculate hexagon center (matching getGridCellCenter logic)
                     const xOffset = (row % 2) ? 0.5 : 0;
                     const cx = offsetX + (col + xOffset) * scale;
@@ -1295,11 +1297,11 @@
                         .attr('fill', colorScale(i % 10))
                         .attr('stroke', 'white')
                         .attr('stroke-width', 1.5)
-                        .on('mouseover', function(event) {
+                        .on('mouseover', function (event) {
                             d3.select(this).attr('opacity', 0.7);
                             showTooltip(event, assignment.name);
                         })
-                        .on('mouseout', function(event) {
+                        .on('mouseout', function (event) {
                             d3.select(this).attr('opacity', 1);
                             hideTooltip();
                         });
@@ -1329,11 +1331,11 @@
                         .attr('width', cellWidth)
                         .attr('height', cellHeight)
                         .attr('fill', colorScale(i % 10))
-                        .on('mouseover', function(event) {
+                        .on('mouseover', function (event) {
                             d3.select(this).attr('opacity', 0.7);
                             showTooltip(event, assignment.name);
                         })
-                        .on('mouseout', function(event) {
+                        .on('mouseout', function (event) {
                             d3.select(this).attr('opacity', 1);
                             hideTooltip();
                         });
@@ -1485,5 +1487,5 @@
         init();
     </script>
 </body>
-</html>
 
+</html>

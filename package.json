@@ -39,7 +39,7 @@
     "visualization",
     "cartogram"
   ],
-  "author": "",
+  "author": "danylaksono",
   "license": "ISC",
   "dependencies": {
     "glpk.js": "^4.0.2"
