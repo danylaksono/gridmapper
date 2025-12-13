@@ -2,6 +2,8 @@
 
 A JavaScript library for allocating geographic points to a grid using Mixed Integer Programming (MIP). This library provides an optimized solution for spatial data visualization by mapping geographic coordinates to grid cells while preserving spatial relationships.
 
+![](./gridmapper_demo.png)
+
 ## Inspiration
 
 This library is inspired by and builds upon the work of **Jo Wood's Grid Map Allocation** library ([@gridmap_allocation](https://observablehq.com/@jwolondon/gridmap-allocation)). The original implementation demonstrated the concept of using linear programming to allocate geographic points to grid cells. This library extends that work with small additional features and optimizations.
@@ -171,6 +173,59 @@ console.log(JSON.stringify(gridGeoJson, null, 2));
 - `data`: Array of data objects with `lon`, `lat`, and `name` properties
 - Returns: GeoJSON FeatureCollection with point features
 
+### Parameter Estimation
+
+The library provides utilities to automatically estimate optimal parameters for grid allocation:
+
+```javascript
+import { estimateParameters, estimateParametersFromData } from 'gridmapper';
+
+// Estimate from GeoJSON data
+const geojson = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', geometry: { type: 'Point', coordinates: [-74.0, 40.7] } },
+    // ... more features
+  ]
+};
+
+const estimatedParams = estimateParameters(geojson, {
+  xAccessor: d => d.lon,
+  yAccessor: d => d.lat
+});
+
+// Use estimated parameters
+const result = await mapper.allocate(data, {
+  ...estimatedParams,
+  mip: () => new GLPKSolver(glpkInstance)
+});
+
+// Or estimate from processed data points
+const data = [
+  { name: 'Location A', lon: -74.0, lat: 40.7 },
+  // ... more locations
+];
+
+const params = estimateParametersFromData(data, {
+  xAccessor: d => d.lon,
+  yAccessor: d => d.lat
+});
+```
+
+**`estimateParameters(geojson, options)`**
+- `geojson`: GeoJSON FeatureCollection with Point, Polygon, or MultiPolygon features
+- `options`: Configuration object
+  - `xAccessor` (Function): Accessor for longitude/x coordinate (default: `d => d.lon`)
+  - `yAccessor` (Function): Accessor for latitude/y coordinate (default: `d => d.lat`)
+- Returns: Object with `{ rows, cols, compactness, rotateByPCA }`
+
+**`estimateParametersFromData(data, options)`**
+- `data`: Array of data objects with x/y coordinates
+- `options`: Configuration object
+  - `xAccessor` (Function): Accessor for x coordinate (default: `d => d.x`)
+  - `yAccessor` (Function): Accessor for y coordinate (default: `d => d.y`)
+- Returns: Object with `{ rows, cols, compactness, rotateByPCA }`
+
 ## Examples
 
 See the `examples/` directory for complete working examples:
@@ -210,7 +265,8 @@ src/
   │   └── glpk-solver.js          # GLPK solver adapter
   │
   └── utils/                      # Output utilities
-      └── geojson-utils.js        # GeoJSON output formatting
+      ├── geojson-utils.js        # GeoJSON output formatting
+      └── parameter-estimator.js  # Parameter estimation utilities
 ```
 
 ### Module Organization
@@ -221,7 +277,7 @@ src/
 - **Features**: Advanced features like PCA rotation, spacer computation, and auto-dimensions
 - **Post-processing**: Optimization algorithms (greedy swaps, simulated annealing)
 - **Solvers**: MIP solver adapters (currently GLPK)
-- **Utils**: Output formatting utilities (GeoJSON)
+- **Utils**: Output formatting utilities (GeoJSON) and parameter estimation
 
 This structure provides:
 - **Clear separation of concerns**: Each module has a single, well-defined responsibility
