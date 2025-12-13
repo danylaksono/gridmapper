@@ -5,6 +5,7 @@
 
 import { calculateBounds } from '../normalization/bounds-calculator.js';
 import { calculateAutoDimensions } from '../features/auto-dimensions.js';
+import { computePolygonCentroid } from './polygon-centroid.js';
 
 /**
  * Estimate optimal parameters for grid allocation from GeoJSON data
@@ -33,23 +34,37 @@ export function estimateParameters(geojson, options = {}) {
             x = geometry.coordinates[0];
             y = geometry.coordinates[1];
         } else if (geometry.type === 'Polygon') {
-            // Calculate centroid from polygon
-            const coords = geometry.coordinates[0];
-            const sum = coords.reduce((acc, [lon, lat]) => ({
-                x: acc.x + lon,
-                y: acc.y + lat
-            }), { x: 0, y: 0 });
-            x = sum.x / coords.length;
-            y = sum.y / coords.length;
+            // Use polylabel-based interior point (pole-of-inaccessibility) when possible
+            const c = computePolygonCentroid(geometry);
+            if (c) {
+                x = c.x;
+                y = c.y;
+            } else {
+                // Fallback to arithmetic mean of outer ring
+                const coords = geometry.coordinates[0];
+                const sum = coords.reduce((acc, [lon, lat]) => ({
+                    x: acc.x + lon,
+                    y: acc.y + lat
+                }), { x: 0, y: 0 });
+                x = sum.x / coords.length;
+                y = sum.y / coords.length;
+            }
         } else if (geometry.type === 'MultiPolygon') {
-            // Use first polygon's centroid
-            const coords = geometry.coordinates[0][0];
-            const sum = coords.reduce((acc, [lon, lat]) => ({
-                x: acc.x + lon,
-                y: acc.y + lat
-            }), { x: 0, y: 0 });
-            x = sum.x / coords.length;
-            y = sum.y / coords.length;
+            // Use the centroid of the largest polygon (by area), via polylabel when possible
+            const c = computePolygonCentroid(geometry);
+            if (c) {
+                x = c.x;
+                y = c.y;
+            } else {
+                // Use first polygon's centroid as a conservative fallback
+                const coords = geometry.coordinates[0][0];
+                const sum = coords.reduce((acc, [lon, lat]) => ({
+                    x: acc.x + lon,
+                    y: acc.y + lat
+                }), { x: 0, y: 0 });
+                x = sum.x / coords.length;
+                y = sum.y / coords.length;
+            }
         } else {
             throw new Error(`Unsupported geometry type: ${geometry.type}. Supported types: Point, Polygon, MultiPolygon`);
         }

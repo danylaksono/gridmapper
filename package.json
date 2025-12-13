@@ -42,7 +42,8 @@
   "author": "danylaksono",
   "license": "ISC",
   "dependencies": {
-    "glpk.js": "^4.0.2"
+    "glpk.js": "^4.0.2",
+    "polylabel": "^1.0.3"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",

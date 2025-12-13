@@ -25,7 +25,8 @@ export default [
       format: 'umd',
       banner,
       globals: {
-        'glpk.js': 'glpk'
+        'glpk.js': 'glpk',
+        'polylabel': 'polylabel'
       }
     },
     external: ['glpk.js'],

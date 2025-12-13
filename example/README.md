@@ -18,7 +18,7 @@ The `london-demo.html` file demonstrates the GridMapper API with London boroughs
 
 ### Running the Demo
 
-1. **No local build required** — the demo imports the published `gridmapper` package from a CDN.
+1. **No build required** — the demo imports the local `src/index.js` ES module. Run `npm install` first to install dependencies (e.g., polylabel), then serve the repository root to make local modules accessible to the browser. If you prefer not to run `npm install`, edit `example/index.html` importmap and map `polylabel` to the CDN: `https://cdn.jsdelivr.net/npm/polylabel@1.1.0/polylabel.js`.
 
 2. **Serve the examples directory** with a web server (required for ES modules and CORS):
    
@@ -44,7 +44,7 @@ The `london-demo.html` file demonstrates the GridMapper API with London boroughs
 
 ### Data
 
-The demo uses `london.geojson`, which contains GeoJSON data for London boroughs. The demo automatically extracts centroids from each borough polygon and allocates them to a grid.
+The demo uses `london.geojson`, which contains GeoJSON data for London boroughs. The demo automatically extracts interior centroids (pole-of-inaccessibility) from each borough polygon using `polylabel` (fallback to a simple mean) and allocates them to a grid.
 
 ### How It Works
 
