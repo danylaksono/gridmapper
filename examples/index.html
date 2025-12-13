@@ -334,8 +334,14 @@
             flex: 1;
             min-height: 0;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: stretch;
+            justify-content: stretch;
+        }
+        
+        .map-container svg {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .loading {
@@ -439,6 +445,8 @@
 
         .map-container svg {
             cursor: grab;
+            min-width: 100%;
+            min-height: 100%;
         }
 
         .map-container svg:active {
@@ -577,11 +585,11 @@
                     </div>
                     <div class="control-group">
                         <label for="rows">Grid Rows</label>
-                        <input type="number" id="rows" min="1" max="20" value="6">
+                        <input type="number" id="rows" min="1" max="100" value="6">
                     </div>
                     <div class="control-group">
                         <label for="cols">Grid Columns</label>
-                        <input type="number" id="cols" min="1" max="20" value="6">
+                        <input type="number" id="cols" min="1" max="100" value="6">
                     </div>
                 </div>
 
@@ -618,7 +626,7 @@
 
     <script type="module">
         // Import GridMapper and GLPK solver
-        import { GridMapper, GLPKSolver, createGridGeoJson } from '../dist/gridmapper.esm.js';
+        import { GridMapper, GLPKSolver, createGridGeoJson, estimateParameters } from '../dist/gridmapper.esm.js';
         import glpk from 'https://cdn.jsdelivr.net/npm/glpk.js@4.0.2/dist/index.js';
 
         // Initialize
@@ -629,6 +637,7 @@
         let currentGridType = 'rect';
         let currentGeoJson = null;
         let isUsingDefaultData = true;
+        let isUpdatingParameters = false; // Flag to prevent recursive updates
 
         // UI elements
         const compactnessSlider = document.getElementById('compactness');
@@ -653,7 +662,7 @@
             
             const containerRect = mapsContainer.getBoundingClientRect();
             const availableHeight = containerRect.height - 40; // Account for padding and header
-            const availableWidth = (containerRect.width - 12) / 2; // Account for gap between maps
+            const availableWidth = (containerRect.width - 6) / 2; // Account for gap between maps
             
             // Use the smaller dimension to ensure square maps fit
             const size = Math.min(availableWidth, availableHeight);
@@ -677,6 +686,62 @@
         compactnessSlider.addEventListener('input', (e) => {
             compactnessValue.textContent = e.target.value;
         });
+
+        // Fix GeoJSON winding order
+        // GeoJSON spec: exterior rings must be counter-clockwise, interior rings (holes) must be clockwise
+        function fixGeoJsonWinding(geojson) {
+            // Calculate signed area of a ring (shoelace formula)
+            function ringArea(ring) {
+                let area = 0;
+                for (let i = 0; i < ring.length - 1; i++) {
+                    area += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+                }
+                return area / 2;
+            }
+
+            // Reverse a ring if needed
+            function fixRing(ring, shouldBeCounterClockwise) {
+                const area = ringArea(ring);
+                const isCounterClockwise = area < 0;
+                
+                if (shouldBeCounterClockwise && !isCounterClockwise) {
+                    return ring.slice().reverse();
+                } else if (!shouldBeCounterClockwise && isCounterClockwise) {
+                    return ring.slice().reverse();
+                }
+                return ring;
+            }
+
+            // Deep clone the GeoJSON
+            const fixed = JSON.parse(JSON.stringify(geojson));
+
+            fixed.features = fixed.features.map(feature => {
+                const geometry = feature.geometry;
+                
+                if (geometry.type === 'Polygon') {
+                    // First ring is exterior (should be counter-clockwise)
+                    // Subsequent rings are holes (should be clockwise)
+                    geometry.coordinates[0] = fixRing(geometry.coordinates[0], true);
+                    for (let i = 1; i < geometry.coordinates.length; i++) {
+                        geometry.coordinates[i] = fixRing(geometry.coordinates[i], false);
+                    }
+                } else if (geometry.type === 'MultiPolygon') {
+                    geometry.coordinates = geometry.coordinates.map(polygon => {
+                        // First ring is exterior (should be counter-clockwise)
+                        polygon[0] = fixRing(polygon[0], true);
+                        // Subsequent rings are holes (should be clockwise)
+                        for (let i = 1; i < polygon.length; i++) {
+                            polygon[i] = fixRing(polygon[i], false);
+                        }
+                        return polygon;
+                    });
+                }
+                
+                return feature;
+            });
+
+            return fixed;
+        }
 
         // Process GeoJSON data
         function processGeoJson(geojson, fileName = 'london.geojson') {
@@ -750,16 +815,54 @@
             return { processedData, bounds };
         }
 
+        // Update UI controls with estimated parameters
+        function updateUIControls(params) {
+            isUpdatingParameters = true;
+            
+            // Update rows and cols inputs
+            rowsInput.value = params.rows;
+            colsInput.value = params.cols;
+            
+            // Update compactness slider
+            const compactnessValue = parseFloat(params.compactness.toFixed(2));
+            compactnessSlider.value = compactnessValue;
+            document.getElementById('compactness-value').textContent = compactnessValue.toFixed(1);
+            
+            // Update PCA rotation checkbox
+            rotatePCAInput.checked = params.rotateByPCA || false;
+            
+            isUpdatingParameters = false;
+        }
+
         // Load and process data
         async function loadData(geojson, fileName = 'london.geojson') {
-            const { processedData, bounds } = processGeoJson(geojson, fileName);
+            // Fix winding order before processing
+            const fixedGeoJson = fixGeoJsonWinding(geojson);
+            
+            const { processedData, bounds } = processGeoJson(fixedGeoJson, fileName);
             
             londonData = processedData;
             originalBounds = bounds;
-            currentGeoJson = geojson;
+            currentGeoJson = fixedGeoJson;
 
-            // Draw original map
-            drawOriginalMap(geojson);
+            // Auto-estimate parameters from GeoJSON (use fixed GeoJSON)
+            try {
+                const estimatedParams = estimateParameters(fixedGeoJson, {
+                    xAccessor: d => d.lon,
+                    yAccessor: d => d.lat
+                });
+                
+                // Update UI controls with estimated parameters
+                updateUIControls(estimatedParams);
+                
+                statusText.textContent = `Auto-estimated: ${estimatedParams.rows}x${estimatedParams.cols} grid, compactness: ${estimatedParams.compactness.toFixed(2)}`;
+            } catch (error) {
+                console.warn('Failed to estimate parameters:', error);
+                // Continue with default values if estimation fails
+            }
+
+            // Draw original map (use fixed GeoJSON)
+            drawOriginalMap(currentGeoJson);
 
             // Initial allocation
             await allocateAndDraw();
@@ -810,9 +913,15 @@
 
             inputs.forEach(input => {
                 input.addEventListener('change', () => {
-                    allocateAndDraw();
+                    // Skip if we're updating parameters programmatically
+                    if (!isUpdatingParameters) {
+                        allocateAndDraw();
+                    }
                 });
                 input.addEventListener('input', () => {
+                    // Skip if we're updating parameters programmatically
+                    if (isUpdatingParameters) return;
+                    
                     if (input.type === 'range') {
                         compactnessValue.textContent = compactnessSlider.value;
                     }
@@ -924,32 +1033,89 @@
             const container = d3.select('#original-map');
             container.selectAll('*').remove();
 
-            const mapWidth = getMapWidth();
-            const mapHeight = getMapHeight();
+            // Get container dimensions - use a reasonable default if not available yet
+            const containerNode = container.node();
+            let mapWidth, mapHeight;
+            
+            if (containerNode) {
+                const containerRect = containerNode.getBoundingClientRect();
+                mapWidth = containerRect.width || getMapWidth();
+                mapHeight = containerRect.height || getMapHeight();
+            } else {
+                mapWidth = getMapWidth();
+                mapHeight = getMapHeight();
+            }
             
             const svg = container.append('svg')
-                .attr('width', mapWidth)
-                .attr('height', mapHeight);
+                .attr('width', '100%')
+                .attr('height', '100%')
+                .attr('viewBox', `0 0 ${mapWidth} ${mapHeight}`)
+                .attr('preserveAspectRatio', 'xMidYMid meet');
 
-            // Create projection
-            const projection = d3.geoMercator()
-                .fitExtent([[10, 10], [mapWidth - 10, mapHeight - 10]], geojson);
+            // Create projection with error handling
+            let projection;
+            try {
+                // Calculate bounds from GeoJSON
+                const bounds = d3.geoBounds(geojson);
+                
+                // Check if bounds are valid
+                if (!bounds || !isFinite(bounds[0][0]) || !isFinite(bounds[0][1]) || 
+                    !isFinite(bounds[1][0]) || !isFinite(bounds[1][1])) {
+                    throw new Error('Invalid GeoJSON bounds');
+                }
+                
+                const padding = 20;
+                projection = d3.geoMercator()
+                    .fitExtent([[padding, padding], [mapWidth - padding, mapHeight - padding]], geojson);
+                    
+                // Fallback if fitExtent fails
+                if (!projection.scale() || !isFinite(projection.scale())) {
+                    // Use fitSize as fallback
+                    projection = d3.geoMercator()
+                        .fitSize([mapWidth - 2 * padding, mapHeight - 2 * padding], geojson);
+                }
+            } catch (error) {
+                console.warn('Error setting up projection, using default:', error);
+                // Fallback to a basic projection centered on the data
+                const bounds = d3.geoBounds(geojson);
+                const center = [
+                    (bounds[0][0] + bounds[1][0]) / 2,
+                    (bounds[0][1] + bounds[1][1]) / 2
+                ];
+                projection = d3.geoMercator()
+                    .center(center)
+                    .scale(Math.min(mapWidth, mapHeight) / Math.PI)
+                    .translate([mapWidth / 2, mapHeight / 2]);
+            }
 
             const path = d3.geoPath().projection(projection);
 
             // Create a group for zoomable content
             const g = svg.append('g').attr('class', 'zoomable-content');
 
-            // Draw boroughs
+            // Draw boroughs with error handling
             g.selectAll('.borough')
                 .data(geojson.features)
                 .enter()
                 .append('path')
                 .attr('class', 'borough')
-                .attr('d', path)
+                .attr('d', d => {
+                    try {
+                        return path(d) || '';
+                    } catch (error) {
+                        console.warn('Error rendering feature:', d.id || d.properties?.name, error);
+                        return '';
+                    }
+                })
+                .filter(d => {
+                    // Filter out features that couldn't be rendered
+                    const pathData = path(d);
+                    return pathData && pathData.length > 0;
+                })
                 .on('mouseover', function(event, d) {
                     d3.select(this).attr('fill', '#357abd');
-                    showTooltip(event, d.id || 'Borough');
+                    const name = d.properties?.name || d.properties?.PROVINSI || d.id || 'Feature';
+                    showTooltip(event, name);
                 })
                 .on('mouseout', function(event, d) {
                     d3.select(this).attr('fill', '#4a90e2');
@@ -957,17 +1123,33 @@
                 });
 
             // Draw centroids
-            g.selectAll('.centroid')
-                .data(londonData)
-                .enter()
-                .append('circle')
-                .attr('class', 'centroid')
-                .attr('cx', d => projection([d.lon, d.lat])[0])
-                .attr('cy', d => projection([d.lon, d.lat])[1])
-                .on('mouseover', function(event, d) {
-                    showTooltip(event, d.name);
-                })
-                .on('mouseout', hideTooltip);
+            if (londonData && londonData.length > 0) {
+                g.selectAll('.centroid')
+                    .data(londonData)
+                    .enter()
+                    .append('circle')
+                    .attr('class', 'centroid')
+                    .attr('cx', d => {
+                        try {
+                            const projected = projection([d.lon, d.lat]);
+                            return projected ? projected[0] : 0;
+                        } catch (error) {
+                            return 0;
+                        }
+                    })
+                    .attr('cy', d => {
+                        try {
+                            const projected = projection([d.lon, d.lat]);
+                            return projected ? projected[1] : 0;
+                        } catch (error) {
+                            return 0;
+                        }
+                    })
+                    .on('mouseover', function(event, d) {
+                        showTooltip(event, d.name);
+                    })
+                    .on('mouseout', hideTooltip);
+            }
 
             // Add zoom controls
             const zoomControls = container.append('div')
@@ -1006,25 +1188,29 @@
         }
 
         function drawGridCartogram(result, gridType = 'rect') {
-            const mapWidth = getMapWidth();
-            const mapHeight = getMapHeight();
+            const container = d3.select('#grid-map');
+            container.selectAll('*').remove();
             
-            const mapContainer = d3.select('#grid-map').select('.map-container');
-            if (mapContainer.empty()) {
-                // If map-container doesn't exist, select the parent
-                const container = d3.select('#grid-map');
-                container.selectAll('*').remove();
-                const svg = container.append('svg')
-                    .attr('width', mapWidth)
-                    .attr('height', mapHeight);
-                setupGridCartogramZoom(svg, container, result, gridType);
+            // Get container dimensions - use a reasonable default if not available yet
+            const containerNode = container.node();
+            let mapWidth, mapHeight;
+            
+            if (containerNode) {
+                const containerRect = containerNode.getBoundingClientRect();
+                mapWidth = containerRect.width || getMapWidth();
+                mapHeight = containerRect.height || getMapHeight();
             } else {
-                mapContainer.selectAll('*').remove();
-                const svg = mapContainer.append('svg')
-                    .attr('width', mapWidth)
-                    .attr('height', mapHeight);
-                setupGridCartogramZoom(svg, mapContainer, result, gridType);
+                mapWidth = getMapWidth();
+                mapHeight = getMapHeight();
             }
+            
+            const svg = container.append('svg')
+                .attr('width', '100%')
+                .attr('height', '100%')
+                .attr('viewBox', `0 0 ${mapWidth} ${mapHeight}`)
+                .attr('preserveAspectRatio', 'xMidYMid meet');
+            
+            setupGridCartogramZoom(svg, container, result, gridType);
         }
 
         function setupGridCartogramZoom(svg, container, result, gridType) {
@@ -1034,9 +1220,19 @@
             const { assignments, meta } = result;
             const { cols, rows } = meta;
 
-            // Calculate cell size
-            const mapWidth = getMapWidth();
-            const mapHeight = getMapHeight();
+            // Calculate cell size - get from viewBox or container dimensions
+            const viewBox = svg.attr('viewBox');
+            let mapWidth, mapHeight;
+            if (viewBox) {
+                const vb = viewBox.split(' ').map(Number);
+                mapWidth = vb[2] || getMapWidth();
+                mapHeight = vb[3] || getMapHeight();
+            } else {
+                const svgNode = svg.node();
+                const svgRect = svgNode ? svgNode.getBoundingClientRect() : null;
+                mapWidth = svgRect?.width || parseInt(svg.attr('width')) || getMapWidth();
+                mapHeight = svgRect?.height || parseInt(svg.attr('height')) || getMapHeight();
+            }
             const padding = 20;
             const availableWidth = mapWidth - 2 * padding;
             const availableHeight = mapHeight - 2 * padding;

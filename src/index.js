@@ -8,4 +8,6 @@ export { GridMapper } from './core/grid-mapper.js';
 export { GLPKSolver } from './solvers/glpk-solver.js';
 export { PCARotation } from './features/pca-rotation.js';
 export { SpacerUtils } from './features/spacer-utils.js';
+export { calculateAutoDimensions } from './features/auto-dimensions.js';
+export { estimateParameters, estimateParametersFromData } from './utils/parameter-estimator.js';
 export { createGridGeoJson, createPointsGeoJson, projectGeoJson } from './utils/geojson-utils.js';
