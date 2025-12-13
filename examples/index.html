@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<!--
+    GridMapper - London Boroughs Demo
+    
+    This example demonstrates the GridMapper API with London boroughs data.
+    It shows the original map and grid cartogram side-by-side, allowing users
+    to adjust configuration parameters and see instant updates.
+    
+    To run this example:
+    1. Make sure you have built the library: npm run build
+    2. Serve this directory with a web server (required for ES modules and CORS):
+       - Python: python -m http.server 8000
+       - Node: npx http-server -p 8000
+       - Or use any other web server
+    3. Open http://localhost:8000/london-demo.html in your browser
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridMapper Cartogram Demo</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            padding: 12px;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 32px;
+            font-size: 15px;
+        }
+
+        .data-section {
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            margin-bottom: 12px;
+            border: 1px solid #e5e7eb;
+            flex-shrink: 0;
+        }
+
+        .data-section h3 {
+            margin: 0 0 10px 0;
+            color: #1a1a1a;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .data-section-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .file-upload-wrapper input[type="file"] {
+            flex: 1;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            background: white;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            min-width: 200px;
+        }
+
+        .file-info {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+            padding: 8px 10px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .reset-button {
+            padding: 8px 16px;
+            background: #6b7280;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .controls {
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            margin-bottom: 12px;
+            border: 1px solid #e5e7eb;
+            flex-shrink: 0;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .control-section {
+            border-left: 3px solid #4a90e2;
+            padding-left: 12px;
+        }
+
+        .control-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-group label {
+            font-weight: 500;
+            color: #374151;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #4a90e2;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            background: #357abd;
+        }
+
+        .control-group input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #4a90e2;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+
+        .control-group input[type="range"]::-moz-range-thumb:hover {
+            background: #357abd;
+        }
+
+        .control-group select {
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            color: #374151;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .control-group select:hover {
+            border-color: #9ca3af;
+        }
+
+        .control-group select:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .control-group input[type="number"] {
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 100%;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .control-group input[type="number"]:hover {
+            border-color: #9ca3af;
+        }
+
+        .control-group input[type="number"]:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .control-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #4a90e2;
+        }
+
+        .value-display {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .maps-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        @media (max-width: 1200px) {
+            .maps-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 16px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .data-section-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .file-upload-wrapper,
+            .file-info {
+                min-width: 100%;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .status {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        .map-panel {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .map-panel h2 {
+            margin-bottom: 8px;
+            color: #1a1a1a;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .map-container {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: #fafafa;
+            position: relative;
+            overflow: hidden;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        #error-container {
+            flex-shrink: 0;
+        }
+
+        #error-container:empty {
+            display: none;
+        }
+
+        .error {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            border: 1px solid #fecaca;
+            font-size: 13px;
+        }
+
+        .status {
+            background: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            font-size: 13px;
+            color: #6b7280;
+            border: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .status strong {
+            color: #1a1a1a;
+        }
+
+        .borough {
+            fill: #4a90e2;
+            stroke: white;
+            stroke-width: 1.5;
+            cursor: pointer;
+            transition: fill 0.2s;
+        }
+
+        .borough:hover {
+            fill: #357abd;
+        }
+
+        .grid-cell {
+            fill: #4a90e2;
+            stroke: white;
+            stroke-width: 1.5;
+            cursor: pointer;
+            transition: fill 0.2s;
+        }
+
+        .grid-cell:hover {
+            fill: #357abd;
+        }
+
+        .centroid {
+            fill: #e74c3c;
+            stroke: white;
+            stroke-width: 2;
+            r: 4;
+        }
+
+        .grid-label {
+            font-size: 10px;
+            fill: #333;
+            text-anchor: middle;
+            pointer-events: none;
+            font-weight: 500;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+        }
+
+        .map-container svg {
+            cursor: grab;
+        }
+
+        .map-container svg:active {
+            cursor: grabbing;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .zoom-button {
+            width: 36px;
+            height: 36px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            user-select: none;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            color: #374151;
+        }
+
+        .zoom-button:hover {
+            background: #f9fafb;
+            border-color: #9ca3af;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .zoom-button:active {
+            background: #f3f4f6;
+            transform: translateY(0);
+        }
+
+        .export-button {
+            padding: 10px 20px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .export-button:hover:not(:disabled) {
+            background: #357abd;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .export-button:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .file-upload-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .file-upload-wrapper input[type="file"]:hover {
+            border-color: #9ca3af;
+        }
+
+        .file-upload-wrapper input[type="file"]:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .reset-button:hover:not(:disabled) {
+            background: #4b5563;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .reset-button:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="error-container"></div>
+
+        <div class="data-section">
+            <h3>Data Source</h3>
+            <div class="data-section-content">
+                <div class="file-upload-wrapper">
+                    <input type="file" id="file-upload" accept=".geojson,.json" />
+                </div>
+                <div class="file-info" id="file-info">Using default: london.geojson</div>
+                <button id="reset-data" class="reset-button" disabled>Reset to Default</button>
+            </div>
+        </div>
+
+        <div class="maps-container">
+            <div class="map-panel">
+                <h2>Original Map</h2>
+                <div class="map-container" id="original-map"></div>
+            </div>
+            <div class="map-panel">
+                <h2>Grid Cartogram</h2>
+                <div class="map-container" id="grid-map"></div>
+            </div>
+        </div>
+        <div class="controls">
+            <div class="controls-grid">
+                <div class="control-section">
+                    <div class="control-section-title">Grid Configuration</div>
+                    <div class="control-group">
+                        <label for="grid-type">Grid Type</label>
+                        <select id="grid-type">
+                            <option value="rect">Rectangular</option>
+                            <option value="hex">Hexagonal</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="rows">Grid Rows</label>
+                        <input type="number" id="rows" min="1" max="20" value="6">
+                    </div>
+                    <div class="control-group">
+                        <label for="cols">Grid Columns</label>
+                        <input type="number" id="cols" min="1" max="20" value="6">
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <div class="control-section-title">Allocation Settings</div>
+                    <div class="control-group">
+                        <label for="compactness">Compactness</label>
+                        <input type="range" id="compactness" min="0" max="1" step="0.1" value="0.5">
+                        <span class="value-display" id="compactness-value">0.5</span>
+                    </div>
+                    <div class="control-group">
+                        <label for="distance-metric">Distance Metric</label>
+                        <select id="distance-metric">
+                            <option value="euclidean">Euclidean</option>
+                            <option value="manhattan">Manhattan</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="rotate-pca">
+                            <input type="checkbox" id="rotate-pca"> Rotate by PCA
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="status" id="status">
+            <strong>Status:</strong> <span id="status-text">Loading...</span>
+            <button id="export-geojson" class="export-button" disabled>Export GeoJSON</button>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script type="module">
+        // Import GridMapper and GLPK solver
+        import { GridMapper, GLPKSolver, createGridGeoJson } from '../dist/gridmapper.esm.js';
+        import glpk from 'https://cdn.jsdelivr.net/npm/glpk.js@4.0.2/dist/index.js';
+
+        // Initialize
+        let glpkInstance = null;
+        let londonData = null;
+        let originalBounds = null;
+        let currentResult = null;
+        let currentGridType = 'rect';
+        let currentGeoJson = null;
+        let isUsingDefaultData = true;
+
+        // UI elements
+        const compactnessSlider = document.getElementById('compactness');
+        const compactnessValue = document.getElementById('compactness-value');
+        const gridTypeSelect = document.getElementById('grid-type');
+        const distanceMetricSelect = document.getElementById('distance-metric');
+        const rowsInput = document.getElementById('rows');
+        const colsInput = document.getElementById('cols');
+        const rotatePCAInput = document.getElementById('rotate-pca');
+        const statusText = document.getElementById('status-text');
+        const errorContainer = document.getElementById('error-container');
+        const tooltip = document.getElementById('tooltip');
+        const exportButton = document.getElementById('export-geojson');
+        const fileUpload = document.getElementById('file-upload');
+        const fileInfo = document.getElementById('file-info');
+        const resetButton = document.getElementById('reset-data');
+
+        // Map dimensions - calculate dynamically to fit viewport
+        function calculateMapDimensions() {
+            const mapsContainer = document.querySelector('.maps-container');
+            if (!mapsContainer) return { width: 500, height: 500 };
+            
+            const containerRect = mapsContainer.getBoundingClientRect();
+            const availableHeight = containerRect.height - 40; // Account for padding and header
+            const availableWidth = (containerRect.width - 12) / 2; // Account for gap between maps
+            
+            // Use the smaller dimension to ensure square maps fit
+            const size = Math.min(availableWidth, availableHeight);
+            return {
+                width: Math.max(300, Math.floor(size)),
+                height: Math.max(300, Math.floor(size))
+            };
+        }
+        
+        let mapDimensions = calculateMapDimensions();
+        
+        function getMapWidth() {
+            return mapDimensions.width;
+        }
+        
+        function getMapHeight() {
+            return mapDimensions.height;
+        }
+
+        // Update compactness display
+        compactnessSlider.addEventListener('input', (e) => {
+            compactnessValue.textContent = e.target.value;
+        });
+
+        // Process GeoJSON data
+        function processGeoJson(geojson, fileName = 'london.geojson') {
+            if (!geojson.features || !Array.isArray(geojson.features) || geojson.features.length === 0) {
+                throw new Error('GeoJSON must contain a features array with at least one feature');
+            }
+
+            // Extract centroids from each feature
+            const processedData = geojson.features.map((feature, i) => {
+                const geometry = feature.geometry;
+                let centroid;
+                
+                if (geometry.type === 'Point') {
+                    // Use point coordinates directly
+                    centroid = {
+                        lon: geometry.coordinates[0],
+                        lat: geometry.coordinates[1]
+                    };
+                } else if (geometry.type === 'Polygon') {
+                    // Calculate centroid from polygon
+                    const coords = geometry.coordinates[0];
+                    const sum = coords.reduce((acc, [lon, lat]) => ({
+                        lon: acc.lon + lon,
+                        lat: acc.lat + lat
+                    }), { lon: 0, lat: 0 });
+                    centroid = {
+                        lon: sum.lon / coords.length,
+                        lat: sum.lat / coords.length
+                    };
+                } else if (geometry.type === 'MultiPolygon') {
+                    // Use first polygon's centroid
+                    const coords = geometry.coordinates[0][0];
+                    const sum = coords.reduce((acc, [lon, lat]) => ({
+                        lon: acc.lon + lon,
+                        lat: acc.lat + lat
+                    }), { lon: 0, lat: 0 });
+                    centroid = {
+                        lon: sum.lon / coords.length,
+                        lat: sum.lat / coords.length
+                    };
+                } else {
+                    throw new Error(`Unsupported geometry type: ${geometry.type}. Supported types: Point, Polygon, MultiPolygon`);
+                }
+                
+                // Extract name from properties or use id/index
+                const name = feature.properties?.name || 
+                            feature.properties?.NAME || 
+                            feature.properties?.id || 
+                            feature.id || 
+                            `Feature ${i + 1}`;
+                
+                return {
+                    id: feature.id || `feature_${i}`,
+                    name: name,
+                    lon: centroid.lon,
+                    lat: centroid.lat,
+                    originalFeature: feature
+                };
+            });
+
+            // Calculate bounds
+            const lons = processedData.map(d => d.lon);
+            const lats = processedData.map(d => d.lat);
+            const bounds = {
+                minX: Math.min(...lons),
+                maxX: Math.max(...lons),
+                minY: Math.min(...lats),
+                maxY: Math.max(...lats)
+            };
+
+            return { processedData, bounds };
+        }
+
+        // Load and process data
+        async function loadData(geojson, fileName = 'london.geojson') {
+            const { processedData, bounds } = processGeoJson(geojson, fileName);
+            
+            londonData = processedData;
+            originalBounds = bounds;
+            currentGeoJson = geojson;
+
+            // Draw original map
+            drawOriginalMap(geojson);
+
+            // Initial allocation
+            await allocateAndDraw();
+        }
+
+        // Load GLPK and initialize
+        async function init() {
+            try {
+                statusText.textContent = 'Loading GLPK solver...';
+                glpkInstance = await glpk();
+                
+                // Wait for DOM to be fully laid out, then recalculate map dimensions
+                await new Promise(resolve => {
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            mapDimensions = calculateMapDimensions();
+                            resolve();
+                        });
+                    });
+                });
+                
+                statusText.textContent = 'Loading London boroughs data...';
+                
+                // Load London GeoJSON
+                const response = await fetch('london.geojson');
+                const geojson = await response.json();
+                
+                await loadData(geojson, 'london.geojson');
+
+                // Setup event listeners
+                setupEventListeners();
+
+            } catch (error) {
+                showError('Failed to initialize: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        function setupEventListeners() {
+            const inputs = [
+                compactnessSlider,
+                gridTypeSelect,
+                distanceMetricSelect,
+                rowsInput,
+                colsInput,
+                rotatePCAInput
+            ];
+
+            inputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    allocateAndDraw();
+                });
+                input.addEventListener('input', () => {
+                    if (input.type === 'range') {
+                        compactnessValue.textContent = compactnessSlider.value;
+                    }
+                    // Debounce for number inputs
+                    if (input.type === 'number') {
+                        clearTimeout(input._timeout);
+                        input._timeout = setTimeout(() => {
+                            allocateAndDraw();
+                        }, 500);
+                    }
+                });
+            });
+
+            // File upload handler
+            fileUpload.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                try {
+                    statusText.textContent = `Loading ${file.name}...`;
+                    errorContainer.innerHTML = '';
+
+                    const text = await file.text();
+                    const geojson = JSON.parse(text);
+
+                    // Validate GeoJSON structure
+                    if (!geojson.type || geojson.type !== 'FeatureCollection') {
+                        throw new Error('GeoJSON must be a FeatureCollection');
+                    }
+
+                    await loadData(geojson, file.name);
+                    
+                    fileInfo.textContent = `Loaded: ${file.name} (${geojson.features.length} features)`;
+                    isUsingDefaultData = false;
+                    resetButton.disabled = false;
+                    statusText.textContent = `Loaded ${geojson.features.length} features from ${file.name}`;
+
+                } catch (error) {
+                    showError('Failed to load file: ' + error.message);
+                    console.error(error);
+                    statusText.textContent = 'Error loading file';
+                    fileUpload.value = ''; // Reset file input
+                }
+            });
+
+            // Reset button handler
+            resetButton.addEventListener('click', async () => {
+                try {
+                    statusText.textContent = 'Loading default data...';
+                    errorContainer.innerHTML = '';
+                    
+                    const response = await fetch('london.geojson');
+                    const geojson = await response.json();
+                    
+                    await loadData(geojson, 'london.geojson');
+                    
+                    fileInfo.textContent = 'Using default: london.geojson';
+                    isUsingDefaultData = true;
+                    resetButton.disabled = true;
+                    fileUpload.value = ''; // Reset file input
+                    statusText.textContent = 'Reset to default data';
+
+                } catch (error) {
+                    showError('Failed to reset: ' + error.message);
+                    console.error(error);
+                }
+            });
+        }
+
+        async function allocateAndDraw() {
+            try {
+                statusText.textContent = 'Computing allocation...';
+                errorContainer.innerHTML = '';
+
+                const mapper = new GridMapper();
+                
+                const config = {
+                    xAccessor: d => d.lon,
+                    yAccessor: d => d.lat,
+                    rows: parseInt(rowsInput.value),
+                    cols: parseInt(colsInput.value),
+                    compactness: parseFloat(compactnessSlider.value),
+                    gridType: gridTypeSelect.value,
+                    distanceMetric: distanceMetricSelect.value,
+                    rotateByPCA: rotatePCAInput.checked,
+                    mip: () => new GLPKSolver(glpkInstance)
+                };
+
+                const result = await mapper.allocate(londonData, config);
+                currentResult = result;
+                currentGridType = config.gridType;
+
+                // Draw grid cartogram
+                drawGridCartogram(result, config.gridType);
+
+                // Enable export button
+                exportButton.disabled = false;
+
+                statusText.textContent = `Allocated ${result.assignments.length} boroughs to ${result.meta.cols}x${result.meta.rows} grid. Score: ${result.meta.score.toFixed(2)}`;
+
+            } catch (error) {
+                showError('Allocation failed: ' + error.message);
+                console.error(error);
+                statusText.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        function drawOriginalMap(geojson) {
+            const container = d3.select('#original-map');
+            container.selectAll('*').remove();
+
+            const mapWidth = getMapWidth();
+            const mapHeight = getMapHeight();
+            
+            const svg = container.append('svg')
+                .attr('width', mapWidth)
+                .attr('height', mapHeight);
+
+            // Create projection
+            const projection = d3.geoMercator()
+                .fitExtent([[10, 10], [mapWidth - 10, mapHeight - 10]], geojson);
+
+            const path = d3.geoPath().projection(projection);
+
+            // Create a group for zoomable content
+            const g = svg.append('g').attr('class', 'zoomable-content');
+
+            // Draw boroughs
+            g.selectAll('.borough')
+                .data(geojson.features)
+                .enter()
+                .append('path')
+                .attr('class', 'borough')
+                .attr('d', path)
+                .on('mouseover', function(event, d) {
+                    d3.select(this).attr('fill', '#357abd');
+                    showTooltip(event, d.id || 'Borough');
+                })
+                .on('mouseout', function(event, d) {
+                    d3.select(this).attr('fill', '#4a90e2');
+                    hideTooltip();
+                });
+
+            // Draw centroids
+            g.selectAll('.centroid')
+                .data(londonData)
+                .enter()
+                .append('circle')
+                .attr('class', 'centroid')
+                .attr('cx', d => projection([d.lon, d.lat])[0])
+                .attr('cy', d => projection([d.lon, d.lat])[1])
+                .on('mouseover', function(event, d) {
+                    showTooltip(event, d.name);
+                })
+                .on('mouseout', hideTooltip);
+
+            // Add zoom controls
+            const zoomControls = container.append('div')
+                .attr('class', 'zoom-controls');
+
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.5, 10])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('+')
+                .on('click', () => {
+                    svg.transition().duration(200).call(zoom.scaleBy, 1.5);
+                });
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('−')
+                .on('click', () => {
+                    svg.transition().duration(200).call(zoom.scaleBy, 1 / 1.5);
+                });
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('⌂')
+                .attr('title', 'Reset zoom')
+                .on('click', () => {
+                    svg.transition().duration(200).call(zoom.transform, d3.zoomIdentity);
+                });
+
+            svg.call(zoom);
+        }
+
+        function drawGridCartogram(result, gridType = 'rect') {
+            const mapWidth = getMapWidth();
+            const mapHeight = getMapHeight();
+            
+            const mapContainer = d3.select('#grid-map').select('.map-container');
+            if (mapContainer.empty()) {
+                // If map-container doesn't exist, select the parent
+                const container = d3.select('#grid-map');
+                container.selectAll('*').remove();
+                const svg = container.append('svg')
+                    .attr('width', mapWidth)
+                    .attr('height', mapHeight);
+                setupGridCartogramZoom(svg, container, result, gridType);
+            } else {
+                mapContainer.selectAll('*').remove();
+                const svg = mapContainer.append('svg')
+                    .attr('width', mapWidth)
+                    .attr('height', mapHeight);
+                setupGridCartogramZoom(svg, mapContainer, result, gridType);
+            }
+        }
+
+        function setupGridCartogramZoom(svg, container, result, gridType) {
+            // Create a group for zoomable content
+            const g = svg.append('g').attr('class', 'zoomable-content');
+
+            const { assignments, meta } = result;
+            const { cols, rows } = meta;
+
+            // Calculate cell size
+            const mapWidth = getMapWidth();
+            const mapHeight = getMapHeight();
+            const padding = 20;
+            const availableWidth = mapWidth - 2 * padding;
+            const availableHeight = mapHeight - 2 * padding;
+
+            // Create color scale
+            const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+            if (gridType === 'hex') {
+                // Hexagonal grid
+                // getGridCellCenter returns: x = col + offset, y = row * 0.8660254037844386
+                // where 0.8660254037844386 = sqrt(3)/2
+                // In grid units: horizontal spacing = 1, vertical spacing = sqrt(3)/2
+                // With staggering, effective width = (cols - 1 + 0.5)
+                
+                const hexYSpacing = 0.8660254037844386; // sqrt(3)/2
+                
+                // Calculate scale factors to fit in available space
+                const scaleX = availableWidth / (cols - 1 + 0.5);
+                const scaleY = availableHeight / ((rows - 1) * hexYSpacing);
+                const scale = Math.min(scaleX, scaleY);
+                
+                // Hexagon radius (width = 2*radius, so radius = scale/2)
+                const hexRadius = scale / 2;
+                
+                // Calculate total space used and center
+                const totalHexWidth = (cols - 1 + 0.5) * scale;
+                const totalHexHeight = (rows - 1) * hexYSpacing * scale;
+                const offsetX = padding + (availableWidth - totalHexWidth) / 2;
+                const offsetY = padding + (availableHeight - totalHexHeight) / 2;
+
+                // Function to generate flat-top hexagon path
+                function hexagonPath(cx, cy, radius) {
+                    // For flat-top hexagons, vertices are at 30° intervals starting from top
+                    const points = [];
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (Math.PI / 3) * i - Math.PI / 6; // Start at -30° (top)
+                        points.push([
+                            cx + radius * Math.cos(angle),
+                            cy + radius * Math.sin(angle)
+                        ]);
+                    }
+                    return 'M' + points.map(p => p.join(',')).join('L') + 'Z';
+                }
+
+                // Draw hexagon cells
+                assignments.forEach((assignment, i) => {
+                    const row = assignment.gridY;
+                    const col = assignment.gridX;
+                    
+                    // Calculate hexagon center (matching getGridCellCenter logic)
+                    const xOffset = (row % 2) ? 0.5 : 0;
+                    const cx = offsetX + (col + xOffset) * scale;
+                    // Flip Y-axis: SVG Y increases downward, but normalization treats Y as increasing upward
+                    const flippedRow = rows - 1 - row;
+                    const cy = offsetY + flippedRow * hexYSpacing * scale;
+
+                    const cell = g.append('path')
+                        .attr('class', 'grid-cell')
+                        .attr('d', hexagonPath(cx, cy, hexRadius))
+                        .attr('fill', colorScale(i % 10))
+                        .attr('stroke', 'white')
+                        .attr('stroke-width', 1.5)
+                        .on('mouseover', function(event) {
+                            d3.select(this).attr('opacity', 0.7);
+                            showTooltip(event, assignment.name);
+                        })
+                        .on('mouseout', function(event) {
+                            d3.select(this).attr('opacity', 1);
+                            hideTooltip();
+                        });
+
+                    // Add label
+                    g.append('text')
+                        .attr('class', 'grid-label')
+                        .attr('x', cx)
+                        .attr('y', cy)
+                        .text(assignment.name.length > 10 ? assignment.name.substring(0, 10) + '...' : assignment.name);
+                });
+            } else {
+                // Rectangular grid
+                const cellWidth = availableWidth / cols;
+                const cellHeight = availableHeight / rows;
+
+                // Draw grid cells
+                assignments.forEach((assignment, i) => {
+                    const x = padding + assignment.gridX * cellWidth;
+                    // Flip Y-axis: SVG Y increases downward, but normalization treats Y as increasing upward
+                    const y = padding + (rows - 1 - assignment.gridY) * cellHeight;
+
+                    const cell = g.append('rect')
+                        .attr('class', 'grid-cell')
+                        .attr('x', x)
+                        .attr('y', y)
+                        .attr('width', cellWidth)
+                        .attr('height', cellHeight)
+                        .attr('fill', colorScale(i % 10))
+                        .on('mouseover', function(event) {
+                            d3.select(this).attr('opacity', 0.7);
+                            showTooltip(event, assignment.name);
+                        })
+                        .on('mouseout', function(event) {
+                            d3.select(this).attr('opacity', 1);
+                            hideTooltip();
+                        });
+
+                    // Add label
+                    g.append('text')
+                        .attr('class', 'grid-label')
+                        .attr('x', x + cellWidth / 2)
+                        .attr('y', y + cellHeight / 2)
+                        .text(assignment.name.length > 10 ? assignment.name.substring(0, 10) + '...' : assignment.name);
+                });
+
+                // Draw grid lines
+                for (let i = 0; i <= cols; i++) {
+                    g.append('line')
+                        .attr('x1', padding + i * cellWidth)
+                        .attr('y1', padding)
+                        .attr('x2', padding + i * cellWidth)
+                        .attr('y2', padding + rows * cellHeight)
+                        .attr('stroke', '#ddd')
+                        .attr('stroke-width', 0.5);
+                }
+                for (let i = 0; i <= rows; i++) {
+                    g.append('line')
+                        .attr('x1', padding)
+                        .attr('y1', padding + i * cellHeight)
+                        .attr('x2', padding + cols * cellWidth)
+                        .attr('y2', padding + i * cellHeight)
+                        .attr('stroke', '#ddd')
+                        .attr('stroke-width', 0.5);
+                }
+                // Note: Grid lines don't need flipping as they're drawn at fixed positions
+            }
+
+            // Add zoom controls
+            const zoomControls = container.append('div')
+                .attr('class', 'zoom-controls');
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('+')
+                .on('click', () => {
+                    svg.transition().call(zoom.scaleBy, 1.5);
+                });
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('−')
+                .on('click', () => {
+                    svg.transition().call(zoom.scaleBy, 1 / 1.5);
+                });
+
+            zoomControls.append('button')
+                .attr('class', 'zoom-button')
+                .text('⌂')
+                .attr('title', 'Reset zoom')
+                .on('click', () => {
+                    svg.transition().call(zoom.transform, d3.zoomIdentity);
+                });
+
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.5, 10])
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+        }
+
+        function showTooltip(event, text) {
+            tooltip.textContent = text;
+            tooltip.classList.add('visible');
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY - 10) + 'px';
+        }
+
+        function hideTooltip() {
+            tooltip.classList.remove('visible');
+        }
+
+        function showError(message) {
+            errorContainer.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        function exportGeoJSON() {
+            if (!currentResult) {
+                showError('No allocation result available to export');
+                return;
+            }
+
+            try {
+                // Create GeoJSON using the utility function
+                const gridGeoJson = createGridGeoJson(
+                    currentResult.assignments,
+                    currentResult.meta.bounds,
+                    currentResult.meta  // Automatically uses gridType from meta
+                );
+
+                // Convert to JSON string
+                const jsonString = JSON.stringify(gridGeoJson, null, 2);
+
+                // Create a blob and download
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `london-grid-cartogram-${currentGridType}-${Date.now()}.geojson`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                statusText.textContent = `GeoJSON exported successfully!`;
+                setTimeout(() => {
+                    if (currentResult) {
+                        statusText.textContent = `Allocated ${currentResult.assignments.length} boroughs to ${currentResult.meta.cols}x${currentResult.meta.rows} grid. Score: ${currentResult.meta.score.toFixed(2)}`;
+                    }
+                }, 2000);
+            } catch (error) {
+                showError('Failed to export GeoJSON: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        // Setup export button
+        exportButton.addEventListener('click', exportGeoJSON);
+
+        // Recalculate map dimensions on resize
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                const oldDims = { ...mapDimensions };
+                mapDimensions = calculateMapDimensions();
+                if (oldDims.width !== mapDimensions.width || oldDims.height !== mapDimensions.height) {
+                    // Redraw maps with new dimensions
+                    if (currentGeoJson) {
+                        drawOriginalMap(currentGeoJson);
+                    }
+                    if (currentResult) {
+                        drawGridCartogram(currentResult, currentGridType);
+                    }
+                }
+            }, 250);
+        });
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
+
