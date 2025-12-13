@@ -21,6 +21,10 @@ import { getGridCellCenter } from '../grid/grid-factory.js';
  * @param {Set} config.spacerSet - Set of spacer cell keys
  * @param {number} config.adjacencyWeight - Weight for adjacency constraints
  * @param {boolean} config.adjacencyDiagonal - Include diagonal neighbors
+ * @param {Object} [config.pairwiseAdjacency] - Optional pairwise adjacency config: { enabled, edgeLimit, nearestCells, weight }
+ * @param {Object} [config.adjacencyGraph] - Optional computed adjacency graph ({nodes, edges}) used by pairwiseAdjacency and adjacency-fixer
+ * @param {boolean} [config.runAdjacencyFix] - If true, run the post-processing adjacency fixer after swaps/SA
+ * @param {number} [config.adjFixIter] - Max iterations for adjacency fixer
  * @param {Function} config.mipFactory - Factory function returning MIP solver
  * @returns {Promise<Object>} Solution object with vars, result, status
  */
@@ -36,6 +40,10 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
         spacerSet,
         adjacencyWeight,
         adjacencyDiagonal,
+        // Embedding-based adjacency penalty: map of pointId -> {x,y} on normalized coords
+        embeddingTargets,
+        // Linear weight for embedding penalty (per-point distance)
+        embeddingWeight = 0,
         mipFactory
     } = config;
 
@@ -78,6 +86,16 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
 
                 // Add to objective (minimize cost)
                 objectiveTerms.push({ name: varName, coef: distCost });
+
+                // Optional: embedding-based linear penalty (pull assignment toward graph embedding target)
+                if (embeddingTargets && embeddingTargets[p.id] && embeddingWeight && embeddingWeight !== 0) {
+                    const t = embeddingTargets[p.id];
+                    // embedding coordinates expected to be in same normalized coordinate system as gridCenter
+                    const ex = t.x - gridCenter.x;
+                    const ey = t.y - gridCenter.y;
+                    const embDist = Math.sqrt(ex * ex + ey * ey);
+                    objectiveTerms.push({ name: varName, coef: embDist * embeddingWeight });
+                }
 
                 // If spacerMode is soft and this cell is a spacer, add mask penalty
                 if (spacerMode === 'soft' && spacerSet.has(`${r}_${c}`)) {
@@ -139,6 +157,102 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
         });
     }
 
+    // --- Sparse pairwise adjacency penalty (optional, more targeted than occ-level adjacency)
+    // Requires an adjacencyGraph in config: { nodes, edges } where edges contain {i, j, weight}
+    // We'll limit to nearest cell pairs around each feature to keep the number of variables small.
+    if (config.pairwiseAdjacency && config.pairwiseAdjacency.enabled && config.adjacencyGraph) {
+        const pw = config.pairwiseAdjacency;
+        const edgeLimit = pw.edgeLimit || config.adjacencyGraph.edges.length;
+        const nearestK = pw.nearestCells || 6;
+        const edgesToUse = config.adjacencyGraph.edges.slice().sort((a,b) => b.weight - a.weight).slice(0, edgeLimit);
+
+        // Precompute grid centers and neighbor lookup
+        const gridCenters = {};
+        Object.keys(cellVars).forEach(cellId => {
+            const [rStr, cStr] = cellId.split('_');
+            const r = parseInt(rStr, 10);
+            const c = parseInt(cStr, 10);
+            gridCenters[cellId] = getGridCellCenter(r, c, gridType);
+        });
+
+        const neighborSets = {};
+        Object.keys(cellVars).forEach(cellId => {
+            const [rStr, cStr] = cellId.split('_');
+            const r = parseInt(rStr, 10);
+            const c = parseInt(cStr, 10);
+            const neighbors = [ `${r-1}_${c}`, `${r+1}_${c}`, `${r}_${c-1}`, `${r}_${c+1}` ];
+            if (adjacencyDiagonal) {
+                neighbors.push(`${r-1}_${c-1}`, `${r-1}_${c+1}`, `${r+1}_${c-1}`, `${r+1}_${c+1}`);
+            }
+            neighborSets[cellId] = neighbors.filter(nid => cellVars[nid]);
+        });
+
+        // For each point, compute nearest K cellIds
+        const nearestCells = {};
+        normalizedPoints.forEach(p => {
+            const dists = Object.keys(gridCenters).map(cid => {
+                const gc = gridCenters[cid];
+                const dx = p.normX - gc.x; const dy = p.normY - gc.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                return { cid, dist };
+            });
+            dists.sort((a,b) => a.dist - b.dist);
+            nearestCells[p.id] = dists.slice(0, Math.min(nearestK, dists.length)).map(d => d.cid);
+        });
+
+        let pwVarCount = 0;
+        let pwConstraintCount = 0;
+
+        edgesToUse.forEach(e => {
+            const pidA = e.i; // index into original features / normalizedPoints
+            const pidB = e.j;
+            const pA = normalizedPoints.find(n => Number(n.id) === Number(pidA));
+            const pB = normalizedPoints.find(n => Number(n.id) === Number(pidB));
+            if (!pA || !pB) return;
+
+            const cellsA = nearestCells[pA.id] || [];
+            const cellsB = nearestCells[pB.id] || [];
+
+            cellsA.forEach(ca => {
+                (neighborSets[ca] || []).forEach(cb => {
+                    if (!cellsB.includes(cb)) return; // require cb to be in B's near set
+
+                    // Create y var for this edge-cellpair
+                    const yName = `y_e${pidA}_${pidB}_${ca.replace('_','r')}_${cb.replace('_','r')}`;
+                    solverBuilder.var(yName, Boolean);
+                    pwVarCount++;
+
+                    // Get assignment var names
+                    const xa = `p${pA.id}_r${ca.split('_')[0]}_c${ca.split('_')[1]}`;
+                    const xb = `p${pB.id}_r${cb.split('_')[0]}_c${cb.split('_')[1]}`;
+
+                    // y <= xa
+                    solverBuilder.addConstraint([{ name: yName, coef: 1 }, { name: xa, coef: -1 }], '<=', 0);
+                    // y <= xb
+                    solverBuilder.addConstraint([{ name: yName, coef: 1 }, { name: xb, coef: -1 }], '<=', 0);
+                    // xa + xb - y <= 1
+                    solverBuilder.addConstraint([{ name: xa, coef: 1 }, { name: xb, coef: 1 }, { name: yName, coef: -1 }], '<=', 1);
+                    pwConstraintCount += 3;
+
+                    // Reward adjacency for this paired assignment
+                    // Edge weight influences the reward
+                    objectiveTerms.push({ name: yName, coef: - (pw.weight || 1) * (e.weight || 1) });
+                });
+            });
+        });
+
+        // Attach counts to solverBuilder for diagnostics
+        solverBuilder.pairwiseVarCount = pwVarCount;
+        solverBuilder.pairwiseConstraintCount = pwConstraintCount;
+        if (pwVarCount === 0) {
+            // eslint-disable-next-line no-console
+            console.warn('pairwiseAdjacency enabled but produced 0 auxiliary variables (edgeLimit=%d, nearestCells=%d). Consider increasing nearestCells or edgeLimit.', edgeLimit, nearestK);
+        } else {
+            // eslint-disable-next-line no-console
+            console.debug('pairwiseAdjacency produced', pwVarCount, 'vars and', pwConstraintCount, 'constraints');
+        }
+    }
+
     // Set Objective
     solverBuilder.setObjective(Math.min, objectiveTerms);
 
@@ -157,7 +271,12 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
     });
 
     // Solve
-    return await solverBuilder.solve();
+    const solved = await solverBuilder.solve();
+    // Attach diagnostic counts if available
+    if (solverBuilder.pairwiseVarCount !== undefined) solved.pairwiseVarCount = solverBuilder.pairwiseVarCount;
+    if (solverBuilder.pairwiseConstraintCount !== undefined) solved.pairwiseConstraintCount = solverBuilder.pairwiseConstraintCount;
+
+    return solved;
 }
 
 /**

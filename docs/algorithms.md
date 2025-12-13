@@ -10,196 +10,199 @@ The `estimateParameters` function automatically determines the optimal grid conf
 
 Before analysis, the algorithm extracts key spatial properties from the input GeoJSON:
 *   **Centroid (x, y)**: The interior label point (pole-of-inaccessibility) computed using `polylabel`, falling back to a simple mean of vertices if unavailable.
-*   **Bounding Box (width, height)**: The extent of the feature.
-*   **Area**: The area of the feature's bounding box (used as a proxy for feature size).
+*   **Feature Bounding Box**: The exact extent (min/max X/Y) of each individual feature.
+*   **Global Bounds**: Calculated from the union of all feature bounding boxes. This provides a more accurate representation of the map's extent than using centroids alone.
 
 ## 2. PCA Rotation Decision
 
 The algorithm decides whether to rotate the grid to align with the principal axis of the data distribution (e.g., for diagonal geographies like Japan or Italy).
 
-*   **Method**: It computes the Principal Component Analysis (PCA) angle of the point cloud.
-*   **Comparison**: It calculates the **Axis-Aligned Bounding Box (AABB)** vs. the **Oriented Bounding Box (OBB)** (the bounds after rotation):
-    *   Areas: `aabbArea`, `obbArea`
-    *   Aspect ratios: `aspectAabb`, `aspectObb`
-*   **Decision Rule (simplified)**:
-    *   If the overall shape is **strongly elongated** (`aspectAabb > 1.8`), always rotate.
-    *   Otherwise, rotate only if PCA both slightly reduces area and clearly improves aspect ratio:
-        *   `areaGain = aabbArea / obbArea > 1.03`
-        *   `aspectObb < aspectAabb * 0.9`
+*   **Method**: It computes the Principal Component Analysis (PCA) angle of the centroid point cloud.
+*   **Rotation**: It simulates rotating both the **centroids** and the **feature bounding boxes** around the **global centroid**.
+*   **Comparison**: It compares the properties of the original vs. rotated configurations:
+    *   **Area**: Does rotation reduce the total bounding box area? (`areaOriginal` vs `areaRotated`)
+    *   **Aspect Ratio (Bounds)**: Does the bounding box become more elongated? (`aspectOriginal` vs `aspectRotated`)
+    *   **Aspect Ratio (Centroids)**: Do the centroids themselves align into a line? (`pointsAspectOriginal` vs `pointsAspectRotated`)
+*   **Decision Rule**: Rotation is recommended if any of the following are true:
+    1.  **Better Fit**: Area is reduced by > 10% (`areaOriginal > areaRotated * 1.1`).
+    2.  **Shape Reveal**: The rotated bounds are significantly more elongated (`aspectRotated > aspectOriginal * 1.5`).
+    3.  **Linear Alignment**: The centroids align linearly after rotation (`pointsAspectRotated > pointsAspectOriginal * 1.5`), even if the feature bounds don't shrink (common for diagonal archipelagos).
 
 ```javascript
 // 1. PCA Analysis & Rotation Decision
-const angle = PCARotation.computeAngle(extractedData);
+const angle = PCARotation.computeAngle(points);
+const globalCentroid = calculateCentroid(points);
 
-const aabb = calculateBounds(extractedData);
-const aabbArea = aabb.width * aabb.height;
+// Rotate points and feature bounds around global centroid
+const rotatedPoints = PCARotation.rotate(points, -angle, globalCentroid);
+const rotatedExtents = rotateFeatureBounds(extractedData, -angle, globalCentroid);
 
-const rotatedPoints = PCARotation.rotate(extractedData, -angle);
-const obb = calculateBounds(rotatedPoints);
-const obbArea = obb.width * obb.height;
+// Calculate metrics
+const areaOriginal = globalBounds.area;
+const areaRotated = rotatedGlobalBounds.area;
+const pointsAspectRotated = calculateAspectRatio(rotatedPointsBounds);
 
-const aspectAabb = Math.max(aabb.width, aabb.height) / Math.max(1e-9, Math.min(aabb.width, aabb.height));
-const aspectObb  = Math.max(obb.width,  obb.height)  / Math.max(1e-9, Math.min(obb.width,  obb.height));
-const areaGain   = aabbArea / Math.max(obbArea, 1e-9);
-
-const elongatedOverall = aspectAabb > 1.8;
-const betterAligned   = areaGain > 1.03 && aspectObb < aspectAabb * 0.9;
-
-const rotateByPCA = elongatedOverall || betterAligned;
+// Decision
+let rotateByPCA = false;
+if (areaOriginal > areaRotated * 1.1) rotateByPCA = true;
+else if (aspectRotated > aspectOriginal * 1.5) rotateByPCA = true;
+else if (pointsAspectRotated > pointsAspectOriginal * 1.5) rotateByPCA = true;
 ```
 
 ## 3. Grid Dimension Calculation
 
-Grid dimensions are calculated based on the aspect ratio of the *effective* bounding box (either AABB or OBB, depending on the rotation decision). This ensures the grid shape roughly matches the data while avoiding extreme, overly skinny grids.
+Grid dimensions are calculated based on the aspect ratio of the *effective* bounding box.
+
+*   **Aspect Override**: Start with the height/width ratio of the working bounds (centroids or rotated centroids) and ease it toward 1.0 to keep extremely skinny shapes usable.
+*   **Slack Cells**: Increase the target cell count as elongation grows (up to ~160% more cells for very diagonal geographies) so islands and peninsulas have breathing room.
+*   **Minimum Rows / Columns**: Scale the minimum allowable rows/cols with the logarithm of elongation. Wide chains such as Japan therefore receive taller and wider starter grids (e.g., auto-suggesting ~10×16 at compactness 0.5).
 
 ```javascript
 // 2. Grid Dimensions
-const effectiveBounds = rotateByPCA ? obb : aabb;
-const { rows, cols } = calculateAutoDimensions(extractedData.length, effectiveBounds);
+const activeBounds = rotateByPCA ? rotatedPointsBounds : pointsBounds;
+const ratioOverride = softenAspectRatio(activeBounds, rotateByPCA); // clamps + eases toward 1
+const targetCells = inflateCellBudget(featureCount, activeBounds);  // adds slack for elongated maps
+const { rows, cols } = calculateAutoDimensions(featureCount, activeBounds, {
+    aspectRatio: ratioOverride,
+    targetCellCount: targetCells,
+    minRows: minimumRows(featureCount, activeBounds),
+    minCols: minimumCols(featureCount, activeBounds)
+});
 ```
 
 ## 4. Advanced Compactness Estimation
 
-The `compactness` parameter controls the trade-off between preserving relative geographic positions (low compactness) and filling the grid tightly (high compactness). By default, the algorithm estimates this using two spatial metrics, with an optional third metric available as an advanced setting.
+The `compactness` parameter controls the trade-off between preserving relative geographic positions (low compactness) and filling the grid tightly (high compactness).
+
+*   **Base Compactness**: Defaults to **0.6** (better default for dense metros such as London).
+*   **Range**: Clamped between **0.35** and **0.75**, with an additional diagonal bias described below.
 
 ### A. Nearest Neighbor Index (NNI)
 Measures the degree of clustering in the data.
-*   **NNI < 1**: Clustered.
-*   **NNI > 1**: Dispersed / Uniform.
-
-**Logic**:
-*   If data is **clustered** (NNI < 0.7), we slightly **increase compactness**. This helps the solver impose a regular grid structure on irregular clusters.
-*   If data is **dispersed** (NNI > 1.2), we **decrease compactness**. Since the points are already well-separated, we prioritize preserving their exact relative positions.
+*   **Clustered (NNI < 0.7)**: **Increase compactness (+0.05)**. Allows the grid to pull clustered points apart to fill gaps.
+*   **Dispersed (NNI > 1.2)**: **Decrease compactness (-0.05)**. Prioritizes preserving the already well-separated positions.
 
 ### B. Coverage Ratio
 Measures how much of the total map area is covered by the features themselves.
-*   **High Coverage**: Features are large and packed tight. We **decrease compactness** to preserve their topological relationships (touching neighbors).
-*   **Low Coverage**: Features are sparse islands. We **increase compactness** as there is more "empty space" to move features around without violating topology.
+*   **High Coverage (> 0.5)**: Dense map (e.g., London boroughs). **Decrease compactness (-0.05)** to respect the tight topology and avoid artificial gaps.
+*   **Low Coverage (< 0.1)**: Sparse map (e.g., islands). **Increase compactness (+0.05)** as there is more empty space to rearrange features.
 
-### C. Neighbourhood Connectivity (Adjacency Graph, Optional)
-As an optional, advanced feature, we can build a simple adjacency graph between features based on their bounding boxes. Two features are treated as neighbours if their (slightly padded) bounding boxes overlap or touch.
+### C. Neighbourhood Connectivity (Adjacency Graph)
+(Optional, enabled by default in advanced estimation)
+*   **High Connectivity (Avg Degree > 3.5)**: **Decrease compactness (-0.04)**. Strong topology constraints require a looser grid.
+*   **Low Connectivity (Avg Degree < 1.5)**: **Increase compactness (+0.05)**. Isolated features can be moved more freely.
 
-This adjacency-based adjustment is **disabled by default** and can be enabled by passing `useAdjacencyForCompactness: true` to `estimateParameters` or `estimateParametersFromData`.
+## Graph-Embedding Adjacency Penalty (New)
+A lightweight approach to encourage adjacency-preserving layouts without adding expensive MIP contiguity constraints.
 
-*   **High average degree**: Many neighbours per feature → strong topology to preserve → we bias toward **lower compactness**.
-*   **Low average degree**: Mostly isolated features → positions can move more freely → we bias toward **higher compactness**.
-*   **Very high max degree**: Presence of hub-like features strongly connected to many neighbours → we further reduce compactness.
+- **Overview**: Build an adjacency graph (nodes = features, edges weighted by shared boundary length). Compute a 2D embedding (spectral/MDS or a force-directed layout) and use the resulting per-feature target coordinates as soft objectives in the allocation MIP. For each feature i and cell c, add a linear penalty term alpha * dist(target_i, center_c) * x_{i,c} to the objective.
+- **Why**: Preserves neighborhood order and relative placement while keeping the MIP compact (no additional binary variables per edge or flow variables). Works well as a practical trade-off between quality and solver speed.
+- **Implementation details used here**:
+  - **Adjacency weights**: Approximate shared boundary length derived from feature bounding boxes (longer shared edges -> stronger edges); this can be replaced with precise shared-boundary measures if a geometry library is available.
+  - **Embedding**: A simple force-directed layout (Fruchterman–Reingold–style) produces stable 2D targets quickly without requiring eigen decomposition.
+  - **Scaling**: The embedding is scaled into the map bounds (same coordinate space as features). Embedding coordinates should be normalized to the same space used by the allocation routine (normalized grid coordinates) before being passed as `embeddingTargets`.
+  - **Objective term**: Use a linear distance penalty (Euclidean or Manhattan) multiplied by a tunable `embeddingWeight` hyperparameter exposed to the advanced allocation engine.
+
+Example usage:
+```javascript
+import { estimateParameters, computeAdjacencyGraph, embedGraph } from '../src/index.js';
+// 1) Estimate params and get the adjacency/embedding targets
+const params = estimateParameters(geojson, { computeEmbedding: true });
+// 2) Pass `params.embeddingTargets` into the advanced allocation config:
+const solution = await solveAdvancedAllocation(normalizedPoints, {
+  ...config,
+  embeddingTargets: params.embeddingTargets,
+  embeddingWeight: 0.2
+});
+```
+
+- **Trade-offs & practical tips**:
+  - Start with a small `embeddingWeight` (e.g., 0.05–0.5) and tune; too large a weight may override compactness and produce poor packing.
+  - Combine embedding penalty with a lightweight local post-processing (swap-based) to repair remaining cut edges.
+  - If strict contiguity is required later, consider flow-based exact contiguity constraints from districting literature (expensive) or sparse pairwise penalties limited to immediate neighbors.
+
+## Sparse Pairwise Adjacency Penalty (Prototype)
+A more targeted alternative that adds auxiliary binary variables only for selected adjacent feature pairs and nearby cell pairs. This gives stronger local guarantees than the embedding penalty at a higher solver cost.
+
+- **Approach implemented**: For the top-K adjacency edges (by shared-boundary weight) we create Boolean auxiliary variables `y_{e,ca,cb}` corresponding to assigning feature A to cell `ca` and feature B to a neighboring cell `cb` (where `ca` and `cb` are among the nearest K cells of A/B respectively and `cb` is a neighbor of `ca`). Standard product linearization constraints are used:
+  - `y <= x_{A,ca}`
+  - `y <= x_{B,cb}`
+  - `x_{A,ca} + x_{B,cb} - y <= 1`
+- **Objective**: Reward `y` by `+edgeWeight * pairwiseWeight` (implemented as negative cost in minimization objective).
+- **Tuning**: The config options are `pairwiseAdjacency: { enabled, edgeLimit, nearestCells, weight }` and you must pass a precomputed `adjacencyGraph` to use this option.
+- **Diagnostics**: the solver builder exposes `pairwiseVarCount` and `pairwiseConstraintCount` for diagnostics. The benchmark script `scripts/benchmark-pairwise.js` writes `demo/benchmark-pairwise.json` with timings.
+- **Practical guidance**: Use small `edgeLimit` and `nearestCells` for medium-sized maps (e.g., `edgeLimit: 100`, `nearestCells: 6`) and increase only when problem sizes are small. Exact contiguity constraints remain more expensive than sparse pairwise penalties.
+
+## Adjacency-Fixer Post-Processing (Local Heuristic)
+A fast local heuristic, `reduceCutEdges`, attempts to reduce the number of cut edges by:
+- moving one endpoint of a cut edge into an empty neighbor cell of the other endpoint,
+- swapping with a nearby occupant when beneficial.
+
+- **When to run**: Enable with `runPostProcess: true` and `runAdjacencyFix: true` passed to the advanced allocator (or via the `postProcessSwaps` `cfg` object). The heuristic is conservative and bounded by `adjFixIter` (default 500 iterations).
+- **Trade-offs**: Cheap and effective at reducing cut edges produced by soft penalties; it does not use additional MIP or flow constraints so fails only when no local moves exist.
+
+## Benchmarks (demo)
+I added `scripts/benchmark-pairwise.js` and ran it on `demo/london.geojson` (default dataset). Results are written to `demo/benchmark-pairwise.json`.
+
+Example result (London demo):
+- Baseline solve: ~43 ms
+- Sparse pairwise adjacency enabled (edgeLimit:200, nearestCells:6): ~12 ms
+- Observed score was unchanged for this dataset (embedding + adjacency heuristics primarily affect topology rather than the compactness objective value)
+
+**Interpretation**: On the London demo the sparse pairwise prototype produced no auxiliary variables (the small grid + parameters lead to zero pairwise vars), so solver time decreased slightly likely due to minor differences in constraint ordering. On larger or denser maps you will see pairwise var growth — tune `edgeLimit`/`nearestCells` to keep variables manageable.
+
+**Usage example**:
+```javascript
+const params = estimateParameters(myGeoJson, { computeEmbedding: true });
+const adj = computeAdjacencyGraph(myGeoJson.features);
+const solution = await mapper.allocate(data, {
+  mip: () => new GLPKSolver(glpkInstance),
+  embeddingWeight: 0.2,
+  embeddingTargets: params.embeddingTargets,
+  pairwiseAdjacency: { enabled: true, edgeLimit: 150, nearestCells: 6, weight: 0.5 },
+  adjacencyGraph: adj,
+  runPostProcess: true,
+  runAdjacencyFix: true
+});
+```
+
+**Notes**: Always profile solver runtime and pairwise counts with `scripts/benchmark-pairwise.js` when adding pairwise constraints for new datasets.
+
+**References**
+- Gastner, M. T., & Newman, M. E. J. (2004). "Diffusion-based method for producing density-equalizing maps." Proc. Natl. Acad. Sci. USA. (Diffusion cartograms)
+- van Kreveld, M., & Speckmann, B. (2007). "On rectangular cartograms." Computational Geometry: Theory and Applications. (Rectangular cartograms)
+- Hojny et al., Shirabe — districting literature on single-commodity flow and exact contiguity constraints (flow-based MIP contiguity).
+- Fruchterman, T. M. J., & Reingold, E. M. (1991). "Graph drawing by force-directed placement." (force-directed layouts)
+### D. Diagonal Bias (Elongated Shapes)
+When the centroid cloud is strongly elongated (aspect ratio > 2.3), the solver converges best with compactness kept near **0.5**. The heuristic therefore eases any adjustments back toward **0.45 – 0.55**, preventing both over-clustering and over-spreading on thin chains of regions.
 
 ```javascript
 function estimateCompactnessAdvanced(points, bounds, options = {}) {
-    const { useAdjacency = false } = options;
+    // ... calculation of NNI, Coverage, Adjacency ...
 
-    if (points.length < 2) return 0.45;
+    // Base compactness
+    let compactness = 0.6;
 
-    const area = bounds.width * bounds.height || 1;
+    // Adjust based on NNI
+    if (nni < 0.7) compactness += 0.05;
+    else if (nni > 1.2) compactness -= 0.05;
 
-    // 1. Nearest Neighbour Index (NNI)
-    const distances = [];
-    for (let i = 0; i < points.length; i++) {
-        let minDist = Infinity;
-        for (let j = 0; j < points.length; j++) {
-            if (i === j) continue;
-            const dx = points[i].x - points[j].x;
-            const dy = points[i].y - points[j].y;
-            const d = Math.sqrt(dx * dx + dy * dy);
-            if (d < minDist) minDist = d;
-        }
-        if (minDist < Infinity) distances.push(minDist);
-    }
+    // Adjust based on Coverage
+    if (coverageRatio > 0.5) compactness -= 0.05;
+    else if (coverageRatio < 0.1) compactness += 0.05;
 
-    const observedMeanNN =
-        distances.length > 0
-            ? distances.reduce((sum, d) => sum + d, 0) / distances.length
-            : 0;
-
-    const lambda = points.length / area; // intensity
-    const expectedMeanNN = 0.5 / Math.sqrt(lambda || 1); // Poisson process
-    const nni = expectedMeanNN > 0 ? observedMeanNN / expectedMeanNN : 1;
-
-    // 2. Coverage ratio (using per-feature bounding boxes / areas)
-    const totalFeatureArea = points.reduce((sum, p) => sum + (p.area || 0), 0);
-    const coverageRatio = Math.min(1, totalFeatureArea / area);
-
-    let compactness = 0.45;
-
-    // Adjust based on NNI (clustering vs dispersion)
-    if (nni < 0.7) {
-        // clustered – allow grid to pull a bit tighter
-        compactness += 0.05;
-    } else if (nni > 1.2) {
-        // dispersed/uniform – preserve positions more strongly
-        compactness -= 0.1;
-    }
-
-    // Adjust based on coverage (how much of the area is filled by features)
-    if (coverageRatio > 0.5) {
-        // dense / urban – avoid over-compact grids that create artificial holes
-        compactness -= 0.15;
-    } else {
-        // sparse / island-like – more freedom to cluster into the grid
-        compactness += 0.05;
-    }
-
-    // 3. Optional neighbourhood connectivity (bbox-based adjacency graph)
+    // Adjust based on Adjacency
     if (useAdjacency) {
-        const { averageDegree, maxDegree } = computeAdjacencyStats(points, bounds);
-
-        if (averageDegree > 4) {
-            compactness -= 0.05;
-        } else if (averageDegree < 2) {
-            compactness += 0.05;
-        }
-
-        if (maxDegree > 8) {
-            compactness -= 0.05;
-        }
+        if (averageDegree > 3.5) compactness -= 0.04;
+        else if (averageDegree < 1.5) compactness += 0.05;
     }
 
-    return Math.max(0.25, Math.min(0.7, compactness));
-}
-
-// Bbox-based adjacency stats used by the optional compactness heuristic
-function computeAdjacencyStats(points, bounds) {
-    const n = points.length;
-    if (!n) {
-        return { averageDegree: 0, maxDegree: 0 };
+    if (aspect > 2.3) {
+        const weight = Math.min(1, (aspect - 2.3) / 2.0);
+        compactness = 0.5 + (compactness - 0.5) * (1 - weight);
+        compactness = Math.max(0.45, Math.min(0.55, compactness));
     }
 
-    const degrees = new Array(n).fill(0);
-    const padX = (bounds.width || 1) * 0.01;  // 1% of total width
-    const padY = (bounds.height || 1) * 0.01; // 1% of total height
-
-    for (let i = 0; i < n; i++) {
-        const a = points[i];
-        const aMinX = (a.minX !== undefined ? a.minX : a.x) - padX;
-        const aMaxX = (a.maxX !== undefined ? a.maxX : a.x) + padX;
-        const aMinY = (a.minY !== undefined ? aMinY : a.y) - padY;
-        const aMaxY = (a.maxY !== undefined ? aMaxY : a.y) + padY;
-
-        for (let j = i + 1; j < n; j++) {
-            const b = points[j];
-            const bMinX = (b.minX !== undefined ? b.minX : b.x) - padX;
-            const bMaxX = (b.maxX !== undefined ? b.maxX : b.x) + padX;
-            const bMinY = (b.minY !== undefined ? bMinY : b.y) - padY;
-            const bMaxY = (b.maxY !== undefined ? bMaxY : b.y) + padY;
-
-            const separated =
-                aMaxX < bMinX ||
-                aMinX > bMaxX ||
-                aMaxY < bMinY ||
-                aMinY > bMaxY;
-
-            if (!separated) {
-                degrees[i]++;
-                degrees[j]++;
-            }
-        }
-    }
-
-    const totalDegree = degrees.reduce((sum, d) => sum + d, 0);
-    const averageDegree = totalDegree / n;
-    const maxDegree = degrees.reduce((m, d) => (d > m ? d : m), 0);
-
-    return { averageDegree, maxDegree };
+    return Math.max(0.35, Math.min(0.75, compactness));
 }
 ```

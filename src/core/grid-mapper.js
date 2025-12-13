@@ -180,6 +180,9 @@ export class GridMapper {
                 spacerSet,
                 adjacencyWeight,
                 adjacencyDiagonal,
+                // pass-through extended options
+                pairwiseAdjacency: options.pairwiseAdjacency,
+                adjacencyGraph: options.adjacencyGraph,
                 mipFactory: mip
             }
         );

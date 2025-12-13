@@ -1,0 +1,1108 @@
+{
+  "nodes": [
+    {
+      "id": "Kingston upon Thames",
+      "props": {
+        "GSSCode": "E09000021"
+      }
+    },
+    {
+      "id": "Croydon",
+      "props": {
+        "GSSCode": "E09000008"
+      }
+    },
+    {
+      "id": "Bromley",
+      "props": {
+        "GSSCode": "E09000006"
+      }
+    },
+    {
+      "id": "Hounslow",
+      "props": {
+        "GSSCode": "E09000018"
+      }
+    },
+    {
+      "id": "Ealing",
+      "props": {
+        "GSSCode": "E09000009"
+      }
+    },
+    {
+      "id": "Havering",
+      "props": {
+        "GSSCode": "E09000016"
+      }
+    },
+    {
+      "id": "Hillingdon",
+      "props": {
+        "GSSCode": "E09000017"
+      }
+    },
+    {
+      "id": "Harrow",
+      "props": {
+        "GSSCode": "E09000015"
+      }
+    },
+    {
+      "id": "Brent",
+      "props": {
+        "GSSCode": "E09000005"
+      }
+    },
+    {
+      "id": "Barnet",
+      "props": {
+        "GSSCode": "E09000003"
+      }
+    },
+    {
+      "id": "Lambeth",
+      "props": {
+        "GSSCode": "E09000022"
+      }
+    },
+    {
+      "id": "Southwark",
+      "props": {
+        "GSSCode": "E09000028"
+      }
+    },
+    {
+      "id": "Lewisham",
+      "props": {
+        "GSSCode": "E09000023"
+      }
+    },
+    {
+      "id": "Greenwich",
+      "props": {
+        "GSSCode": "E09000011"
+      }
+    },
+    {
+      "id": "Bexley",
+      "props": {
+        "GSSCode": "E09000004"
+      }
+    },
+    {
+      "id": "Enfield",
+      "props": {
+        "GSSCode": "E09000010"
+      }
+    },
+    {
+      "id": "Waltham Forest",
+      "props": {
+        "GSSCode": "E09000031"
+      }
+    },
+    {
+      "id": "Redbridge",
+      "props": {
+        "GSSCode": "E09000026"
+      }
+    },
+    {
+      "id": "Sutton",
+      "props": {
+        "GSSCode": "E09000029"
+      }
+    },
+    {
+      "id": "Richmond upon Thames",
+      "props": {
+        "GSSCode": "E09000027"
+      }
+    },
+    {
+      "id": "Merton",
+      "props": {
+        "GSSCode": "E09000024"
+      }
+    },
+    {
+      "id": "Wandsworth",
+      "props": {
+        "GSSCode": "E09000032"
+      }
+    },
+    {
+      "id": "Hammersmith and Fulham",
+      "props": {
+        "GSSCode": "E09000013"
+      }
+    },
+    {
+      "id": "Kensington and Chelsea",
+      "props": {
+        "GSSCode": "E09000020"
+      }
+    },
+    {
+      "id": "Westminster",
+      "props": {
+        "GSSCode": "E09000033"
+      }
+    },
+    {
+      "id": "Camden",
+      "props": {
+        "GSSCode": "E09000007"
+      }
+    },
+    {
+      "id": "Tower Hamlets",
+      "props": {
+        "GSSCode": "E09000030"
+      }
+    },
+    {
+      "id": "Islington",
+      "props": {
+        "GSSCode": "E09000019"
+      }
+    },
+    {
+      "id": "Hackney",
+      "props": {
+        "GSSCode": "E09000012"
+      }
+    },
+    {
+      "id": "Haringey",
+      "props": {
+        "GSSCode": "E09000014"
+      }
+    },
+    {
+      "id": "Newham",
+      "props": {
+        "GSSCode": "E09000025"
+      }
+    },
+    {
+      "id": "Barking and Dagenham",
+      "props": {
+        "GSSCode": "E09000002"
+      }
+    },
+    {
+      "id": "City of London",
+      "props": {
+        "GSSCode": "E09000001"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "Kingston upon Thames",
+      "target": "Hounslow",
+      "weight": 0.08630535325598643,
+      "i": 0,
+      "j": 3
+    },
+    {
+      "source": "Kingston upon Thames",
+      "target": "Sutton",
+      "weight": 0.06697203375974681,
+      "i": 0,
+      "j": 18
+    },
+    {
+      "source": "Kingston upon Thames",
+      "target": "Richmond upon Thames",
+      "weight": 0.09204778380530837,
+      "i": 0,
+      "j": 19
+    },
+    {
+      "source": "Kingston upon Thames",
+      "target": "Merton",
+      "weight": 0.05712678015803618,
+      "i": 0,
+      "j": 20
+    },
+    {
+      "source": "Kingston upon Thames",
+      "target": "Wandsworth",
+      "weight": 0.02043629695493998,
+      "i": 0,
+      "j": 21
+    },
+    {
+      "source": "Croydon",
+      "target": "Bromley",
+      "weight": 0.13390355207257443,
+      "i": 1,
+      "j": 2
+    },
+    {
+      "source": "Croydon",
+      "target": "Lambeth",
+      "weight": 0.072455961931151,
+      "i": 1,
+      "j": 10
+    },
+    {
+      "source": "Croydon",
+      "target": "Southwark",
+      "weight": 0.07845173500470776,
+      "i": 1,
+      "j": 11
+    },
+    {
+      "source": "Croydon",
+      "target": "Lewisham",
+      "weight": 0.07743836490776856,
+      "i": 1,
+      "j": 12
+    },
+    {
+      "source": "Croydon",
+      "target": "Greenwich",
+      "weight": 0.028712152746609876,
+      "i": 1,
+      "j": 13
+    },
+    {
+      "source": "Croydon",
+      "target": "Sutton",
+      "weight": 0.07191491828406527,
+      "i": 1,
+      "j": 18
+    },
+    {
+      "source": "Croydon",
+      "target": "Merton",
+      "weight": 0.04310843552351429,
+      "i": 1,
+      "j": 20
+    },
+    {
+      "source": "Croydon",
+      "target": "Wandsworth",
+      "weight": 0.033525660707071026,
+      "i": 1,
+      "j": 21
+    },
+    {
+      "source": "Bromley",
+      "target": "Lambeth",
+      "weight": 0.033344212815649144,
+      "i": 2,
+      "j": 10
+    },
+    {
+      "source": "Bromley",
+      "target": "Southwark",
+      "weight": 0.04805063209653254,
+      "i": 2,
+      "j": 11
+    },
+    {
+      "source": "Bromley",
+      "target": "Lewisham",
+      "weight": 0.11383524088950059,
+      "i": 2,
+      "j": 12
+    },
+    {
+      "source": "Bromley",
+      "target": "Greenwich",
+      "weight": 0.15056990690354566,
+      "i": 2,
+      "j": 13
+    },
+    {
+      "source": "Bromley",
+      "target": "Bexley",
+      "weight": 0.08698093332061252,
+      "i": 2,
+      "j": 14
+    },
+    {
+      "source": "Hounslow",
+      "target": "Ealing",
+      "weight": 0.1738774191331467,
+      "i": 3,
+      "j": 4
+    },
+    {
+      "source": "Hounslow",
+      "target": "Hillingdon",
+      "weight": 0.08554532568328199,
+      "i": 3,
+      "j": 6
+    },
+    {
+      "source": "Hounslow",
+      "target": "Richmond upon Thames",
+      "weight": 0.14693866405618033,
+      "i": 3,
+      "j": 19
+    },
+    {
+      "source": "Hounslow",
+      "target": "Merton",
+      "weight": 0.02070339337642224,
+      "i": 3,
+      "j": 20
+    },
+    {
+      "source": "Hounslow",
+      "target": "Wandsworth",
+      "weight": 0.06429801426298809,
+      "i": 3,
+      "j": 21
+    },
+    {
+      "source": "Hounslow",
+      "target": "Hammersmith and Fulham",
+      "weight": 0.03800348921152619,
+      "i": 3,
+      "j": 22
+    },
+    {
+      "source": "Ealing",
+      "target": "Hillingdon",
+      "weight": 0.06920038334038026,
+      "i": 4,
+      "j": 6
+    },
+    {
+      "source": "Ealing",
+      "target": "Harrow",
+      "weight": 0.13688941059486687,
+      "i": 4,
+      "j": 7
+    },
+    {
+      "source": "Ealing",
+      "target": "Brent",
+      "weight": 0.08985214859527346,
+      "i": 4,
+      "j": 8
+    },
+    {
+      "source": "Ealing",
+      "target": "Barnet",
+      "weight": 0.0587754656224721,
+      "i": 4,
+      "j": 9
+    },
+    {
+      "source": "Ealing",
+      "target": "Richmond upon Thames",
+      "weight": 0.14567195143500633,
+      "i": 4,
+      "j": 19
+    },
+    {
+      "source": "Ealing",
+      "target": "Hammersmith and Fulham",
+      "weight": 0.042298126585102125,
+      "i": 4,
+      "j": 22
+    },
+    {
+      "source": "Havering",
+      "target": "Bexley",
+      "weight": 0.07946510510164695,
+      "i": 5,
+      "j": 14
+    },
+    {
+      "source": "Havering",
+      "target": "Redbridge",
+      "weight": 0.0847583149578881,
+      "i": 5,
+      "j": 17
+    },
+    {
+      "source": "Havering",
+      "target": "Barking and Dagenham",
+      "weight": 0.08722975722004378,
+      "i": 5,
+      "j": 31
+    },
+    {
+      "source": "Hillingdon",
+      "target": "Harrow",
+      "weight": 0.07868099791979688,
+      "i": 6,
+      "j": 7
+    },
+    {
+      "source": "Hillingdon",
+      "target": "Richmond upon Thames",
+      "weight": 0.035086377033238136,
+      "i": 6,
+      "j": 19
+    },
+    {
+      "source": "Harrow",
+      "target": "Brent",
+      "weight": 0.06840248154339429,
+      "i": 7,
+      "j": 8
+    },
+    {
+      "source": "Harrow",
+      "target": "Barnet",
+      "weight": 0.08536604666169723,
+      "i": 7,
+      "j": 9
+    },
+    {
+      "source": "Brent",
+      "target": "Barnet",
+      "weight": 0.11299076580871797,
+      "i": 8,
+      "j": 9
+    },
+    {
+      "source": "Brent",
+      "target": "Hammersmith and Fulham",
+      "weight": 0.06358897358293325,
+      "i": 8,
+      "j": 22
+    },
+    {
+      "source": "Brent",
+      "target": "Kensington and Chelsea",
+      "weight": 0.03698800853827988,
+      "i": 8,
+      "j": 23
+    },
+    {
+      "source": "Brent",
+      "target": "Westminster",
+      "weight": 0.02448977734269675,
+      "i": 8,
+      "j": 24
+    },
+    {
+      "source": "Brent",
+      "target": "Camden",
+      "weight": 0.04529626965722855,
+      "i": 8,
+      "j": 25
+    },
+    {
+      "source": "Barnet",
+      "target": "Enfield",
+      "weight": 0.06450059149759113,
+      "i": 9,
+      "j": 15
+    },
+    {
+      "source": "Barnet",
+      "target": "Camden",
+      "weight": 0.08436306057018633,
+      "i": 9,
+      "j": 25
+    },
+    {
+      "source": "Barnet",
+      "target": "Islington",
+      "weight": 0.020338754354142452,
+      "i": 9,
+      "j": 27
+    },
+    {
+      "source": "Barnet",
+      "target": "Haringey",
+      "weight": 0.04643070217100842,
+      "i": 9,
+      "j": 29
+    },
+    {
+      "source": "Lambeth",
+      "target": "Southwark",
+      "weight": 0.0878374889238529,
+      "i": 10,
+      "j": 11
+    },
+    {
+      "source": "Lambeth",
+      "target": "Lewisham",
+      "weight": 0.07953182230513534,
+      "i": 10,
+      "j": 12
+    },
+    {
+      "source": "Lambeth",
+      "target": "Merton",
+      "weight": 0.030467616084287386,
+      "i": 10,
+      "j": 20
+    },
+    {
+      "source": "Lambeth",
+      "target": "Wandsworth",
+      "weight": 0.06729615733511451,
+      "i": 10,
+      "j": 21
+    },
+    {
+      "source": "Lambeth",
+      "target": "Kensington and Chelsea",
+      "weight": 0.03103483234117732,
+      "i": 10,
+      "j": 23
+    },
+    {
+      "source": "Lambeth",
+      "target": "Westminster",
+      "weight": 0.03918364374831479,
+      "i": 10,
+      "j": 24
+    },
+    {
+      "source": "Lambeth",
+      "target": "Camden",
+      "weight": 0.045432759346106355,
+      "i": 10,
+      "j": 25
+    },
+    {
+      "source": "Lambeth",
+      "target": "Tower Hamlets",
+      "weight": 0.022324011253246567,
+      "i": 10,
+      "j": 26
+    },
+    {
+      "source": "Lambeth",
+      "target": "City of London",
+      "weight": 0.03546795339287112,
+      "i": 10,
+      "j": 32
+    },
+    {
+      "source": "Southwark",
+      "target": "Lewisham",
+      "weight": 0.07244161909402891,
+      "i": 11,
+      "j": 12
+    },
+    {
+      "source": "Southwark",
+      "target": "Westminster",
+      "weight": 0.02366102100162948,
+      "i": 11,
+      "j": 24
+    },
+    {
+      "source": "Southwark",
+      "target": "Camden",
+      "weight": 0.005489088025087185,
+      "i": 11,
+      "j": 25
+    },
+    {
+      "source": "Southwark",
+      "target": "Tower Hamlets",
+      "weight": 0.04703726199959335,
+      "i": 11,
+      "j": 26
+    },
+    {
+      "source": "Southwark",
+      "target": "City of London",
+      "weight": 0.03808582614329731,
+      "i": 11,
+      "j": 32
+    },
+    {
+      "source": "Lewisham",
+      "target": "Greenwich",
+      "weight": 0.06879522887117417,
+      "i": 12,
+      "j": 13
+    },
+    {
+      "source": "Lewisham",
+      "target": "Tower Hamlets",
+      "weight": 0.08385637552171676,
+      "i": 12,
+      "j": 26
+    },
+    {
+      "source": "Greenwich",
+      "target": "Bexley",
+      "weight": 0.08718924177312459,
+      "i": 13,
+      "j": 14
+    },
+    {
+      "source": "Greenwich",
+      "target": "Tower Hamlets",
+      "weight": 0.035130163360558075,
+      "i": 13,
+      "j": 26
+    },
+    {
+      "source": "Greenwich",
+      "target": "Newham",
+      "weight": 0.11712869370455298,
+      "i": 13,
+      "j": 30
+    },
+    {
+      "source": "Greenwich",
+      "target": "Barking and Dagenham",
+      "weight": 0.05700206795282858,
+      "i": 13,
+      "j": 31
+    },
+    {
+      "source": "Bexley",
+      "target": "Newham",
+      "weight": 0.020520744463018326,
+      "i": 14,
+      "j": 30
+    },
+    {
+      "source": "Bexley",
+      "target": "Barking and Dagenham",
+      "weight": 0.11484861098643984,
+      "i": 14,
+      "j": 31
+    },
+    {
+      "source": "Enfield",
+      "target": "Waltham Forest",
+      "weight": 0.05337082510546315,
+      "i": 15,
+      "j": 16
+    },
+    {
+      "source": "Enfield",
+      "target": "Haringey",
+      "weight": 0.12988026742437087,
+      "i": 15,
+      "j": 29
+    },
+    {
+      "source": "Waltham Forest",
+      "target": "Redbridge",
+      "weight": 0.07892409060132621,
+      "i": 16,
+      "j": 17
+    },
+    {
+      "source": "Waltham Forest",
+      "target": "Hackney",
+      "weight": 0.04568610187034111,
+      "i": 16,
+      "j": 28
+    },
+    {
+      "source": "Waltham Forest",
+      "target": "Haringey",
+      "weight": 0.04643070217100842,
+      "i": 16,
+      "j": 29
+    },
+    {
+      "source": "Waltham Forest",
+      "target": "Newham",
+      "weight": 0.04686836698343683,
+      "i": 16,
+      "j": 30
+    },
+    {
+      "source": "Redbridge",
+      "target": "Tower Hamlets",
+      "weight": 0.0005672162568899353,
+      "i": 17,
+      "j": 26
+    },
+    {
+      "source": "Redbridge",
+      "target": "Newham",
+      "weight": 0.08723427584484733,
+      "i": 17,
+      "j": 30
+    },
+    {
+      "source": "Redbridge",
+      "target": "Barking and Dagenham",
+      "weight": 0.082336320376308,
+      "i": 17,
+      "j": 31
+    },
+    {
+      "source": "Sutton",
+      "target": "Richmond upon Thames",
+      "weight": 0.02204079960842703,
+      "i": 18,
+      "j": 19
+    },
+    {
+      "source": "Sutton",
+      "target": "Merton",
+      "weight": 0.12092883156807482,
+      "i": 18,
+      "j": 20
+    },
+    {
+      "source": "Richmond upon Thames",
+      "target": "Merton",
+      "weight": 0.04967193792464997,
+      "i": 19,
+      "j": 20
+    },
+    {
+      "source": "Richmond upon Thames",
+      "target": "Wandsworth",
+      "weight": 0.06729615733511451,
+      "i": 19,
+      "j": 21
+    },
+    {
+      "source": "Richmond upon Thames",
+      "target": "Hammersmith and Fulham",
+      "weight": 0.03166781552934922,
+      "i": 19,
+      "j": 22
+    },
+    {
+      "source": "Richmond upon Thames",
+      "target": "Kensington and Chelsea",
+      "weight": 0.010939170668564202,
+      "i": 19,
+      "j": 23
+    },
+    {
+      "source": "Merton",
+      "target": "Wandsworth",
+      "weight": 0.1258267870366142,
+      "i": 20,
+      "j": 21
+    },
+    {
+      "source": "Wandsworth",
+      "target": "Hammersmith and Fulham",
+      "weight": 0.07566496723812505,
+      "i": 21,
+      "j": 22
+    },
+    {
+      "source": "Wandsworth",
+      "target": "Kensington and Chelsea",
+      "weight": 0.07845173500470776,
+      "i": 21,
+      "j": 23
+    },
+    {
+      "source": "Wandsworth",
+      "target": "Westminster",
+      "weight": 0.08757206587716038,
+      "i": 21,
+      "j": 24
+    },
+    {
+      "source": "Hammersmith and Fulham",
+      "target": "Kensington and Chelsea",
+      "weight": 0.052913173678305725,
+      "i": 22,
+      "j": 23
+    },
+    {
+      "source": "Hammersmith and Fulham",
+      "target": "Westminster",
+      "weight": 0.04797028915398727,
+      "i": 22,
+      "j": 24
+    },
+    {
+      "source": "Hammersmith and Fulham",
+      "target": "Camden",
+      "weight": 0.03411679326361888,
+      "i": 22,
+      "j": 25
+    },
+    {
+      "source": "Kensington and Chelsea",
+      "target": "Westminster",
+      "weight": 0.06595350380912463,
+      "i": 23,
+      "j": 24
+    },
+    {
+      "source": "Kensington and Chelsea",
+      "target": "Camden",
+      "weight": 0.06350452607485496,
+      "i": 23,
+      "j": 25
+    },
+    {
+      "source": "Westminster",
+      "target": "Camden",
+      "weight": 0.10192814225046537,
+      "i": 24,
+      "j": 25
+    },
+    {
+      "source": "Westminster",
+      "target": "Islington",
+      "weight": 0.030823340448566605,
+      "i": 24,
+      "j": 27
+    },
+    {
+      "source": "Westminster",
+      "target": "City of London",
+      "weight": 0.015031230807544205,
+      "i": 24,
+      "j": 32
+    },
+    {
+      "source": "Camden",
+      "target": "Islington",
+      "weight": 0.05441224521435828,
+      "i": 25,
+      "j": 27
+    },
+    {
+      "source": "Camden",
+      "target": "Hackney",
+      "weight": 0.052629565549857205,
+      "i": 25,
+      "j": 28
+    },
+    {
+      "source": "Camden",
+      "target": "Haringey",
+      "weight": 0.06595350380912463,
+      "i": 25,
+      "j": 29
+    },
+    {
+      "source": "Camden",
+      "target": "City of London",
+      "weight": 0.0102504080709096,
+      "i": 25,
+      "j": 32
+    },
+    {
+      "source": "Tower Hamlets",
+      "target": "Islington",
+      "weight": 0.026091947816865968,
+      "i": 26,
+      "j": 27
+    },
+    {
+      "source": "Tower Hamlets",
+      "target": "Hackney",
+      "weight": 0.06282894601022881,
+      "i": 26,
+      "j": 28
+    },
+    {
+      "source": "Tower Hamlets",
+      "target": "Newham",
+      "weight": 0.046268640383324566,
+      "i": 26,
+      "j": 30
+    },
+    {
+      "source": "Tower Hamlets",
+      "target": "City of London",
+      "weight": 0.015031230807544205,
+      "i": 26,
+      "j": 32
+    },
+    {
+      "source": "Islington",
+      "target": "Hackney",
+      "weight": 0.05518203870585836,
+      "i": 27,
+      "j": 28
+    },
+    {
+      "source": "Islington",
+      "target": "Haringey",
+      "weight": 0.06561571377681158,
+      "i": 27,
+      "j": 29
+    },
+    {
+      "source": "Islington",
+      "target": "City of London",
+      "weight": 0.03698800853827988,
+      "i": 27,
+      "j": 32
+    },
+    {
+      "source": "Hackney",
+      "target": "Haringey",
+      "weight": 0.06291339351830705,
+      "i": 28,
+      "j": 29
+    },
+    {
+      "source": "Hackney",
+      "target": "Newham",
+      "weight": 0.04367565178040422,
+      "i": 28,
+      "j": 30
+    },
+    {
+      "source": "Hackney",
+      "target": "City of London",
+      "weight": 0.03158336802127093,
+      "i": 28,
+      "j": 32
+    },
+    {
+      "source": "Newham",
+      "target": "Barking and Dagenham",
+      "weight": 0.051819256611437936,
+      "i": 30,
+      "j": 31
+    }
+  ],
+  "embedding": {
+    "Kingston upon Thames": {
+      "x": 0.658939630950618,
+      "y": 0.44518711726922877
+    },
+    "Croydon": {
+      "x": 0.5032075521794896,
+      "y": 0.4909822221590237
+    },
+    "Bromley": {
+      "x": 0.3941008137634968,
+      "y": 0.4980568512854997
+    },
+    "Hounslow": {
+      "x": 0.6424077775434568,
+      "y": 0.3414248554084034
+    },
+    "Ealing": {
+      "x": 0.5400420961248721,
+      "y": 0.21038571486656277
+    },
+    "Havering": {
+      "x": 0.1688240674546505,
+      "y": 0.5761502829303673
+    },
+    "Hillingdon": {
+      "x": 0.6354038702339622,
+      "y": 0.22199528810234076
+    },
+    "Harrow": {
+      "x": 0.524001228362884,
+      "y": 0.13522079896180383
+    },
+    "Brent": {
+      "x": 0.48147870675137133,
+      "y": 0.2679823299914469
+    },
+    "Barnet": {
+      "x": 0.38578686527417094,
+      "y": 0.2167513696913214
+    },
+    "Lambeth": {
+      "x": 0.46627295137128183,
+      "y": 0.4275032324546504
+    },
+    "Southwark": {
+      "x": 0.4175404112925465,
+      "y": 0.4125947258251618
+    },
+    "Lewisham": {
+      "x": 0.4366510973802941,
+      "y": 0.5364340597763461
+    },
+    "Greenwich": {
+      "x": 0.36228512193363693,
+      "y": 0.5346378307922829
+    },
+    "Bexley": {
+      "x": 0.243231285319052,
+      "y": 0.5294030043746105
+    },
+    "Enfield": {
+      "x": 0.22900240838964434,
+      "y": 0.19810613153001336
+    },
+    "Waltham Forest": {
+      "x": 0.21184381142819164,
+      "y": 0.3195206944124669
+    },
+    "Redbridge": {
+      "x": 0.31181754014966806,
+      "y": 0.44501084181283607
+    },
+    "Sutton": {
+      "x": 0.6575109745368094,
+      "y": 0.4127833424469328
+    },
+    "Richmond upon Thames": {
+      "x": 0.6022702513151891,
+      "y": 0.3294127821234389
+    },
+    "Merton": {
+      "x": 0.5828905412068713,
+      "y": 0.4325437504552626
+    },
+    "Wandsworth": {
+      "x": 0.5584088670546962,
+      "y": 0.41681985555811396
+    },
+    "Hammersmith and Fulham": {
+      "x": 0.5402191612572013,
+      "y": 0.3064493391608021
+    },
+    "Kensington and Chelsea": {
+      "x": 0.5366403592727638,
+      "y": 0.3375332979644655
+    },
+    "Westminster": {
+      "x": 0.4569576032655334,
+      "y": 0.33448965619975907
+    },
+    "Camden": {
+      "x": 0.416802337087345,
+      "y": 0.3387650855632808
+    },
+    "Tower Hamlets": {
+      "x": 0.330614551457683,
+      "y": 0.43609211768718675
+    },
+    "Islington": {
+      "x": 0.3556582179458492,
+      "y": 0.3152623432121067
+    },
+    "Hackney": {
+      "x": 0.29079176262429074,
+      "y": 0.3578168744972754
+    },
+    "Haringey": {
+      "x": 0.2892693134358225,
+      "y": 0.268500916846826
+    },
+    "Newham": {
+      "x": 0.2372900221144474,
+      "y": 0.4667112092931355
+    },
+    "Barking and Dagenham": {
+      "x": 0.26221470962251936,
+      "y": 0.5643895639350828
+    },
+    "City of London": {
+      "x": 0.3762839873327546,
+      "y": 0.37292082525266146
+    }
+  }
+}

@@ -6,6 +6,9 @@
 import { calculateBounds } from '../normalization/bounds-calculator.js';
 import { calculateAutoDimensions } from '../features/auto-dimensions.js';
 import { computePolygonCentroid } from './polygon-centroid.js';
+import { PCARotation } from '../features/pca-rotation.js';
+import { computeAdjacencyGraph } from './adjacency-graph.js';
+import { embedGraph } from './graph-embed.js';
 
 /**
  * Estimate optimal parameters for grid allocation from GeoJSON data
@@ -18,81 +21,387 @@ import { computePolygonCentroid } from './polygon-centroid.js';
 export function estimateParameters(geojson, options = {}) {
     const {
         xAccessor = d => d.lon,
-        yAccessor = d => d.lat
+        yAccessor = d => d.lat,
+        // Optional: compute graph embedding for adjacency-based penalty
+        computeEmbedding = false,
+        embeddingOptions = {}
     } = options;
 
     if (!geojson.features || !Array.isArray(geojson.features) || geojson.features.length === 0) {
         throw new Error('GeoJSON must contain a features array with at least one feature');
     }
 
-    // Extract points from features
-    const points = geojson.features.map((feature, i) => {
+    // 1. Extract centroids and bounding boxes
+    const extracted = geojson.features.map((feature, fi) => {
         const geometry = feature.geometry;
         let x, y;
+        // attach an id so we can map back to features for adjacency/embedding
+        const id = feature.id ?? feature.properties?.id ?? String(fi);
         
+        // Calculate centroid
         if (geometry.type === 'Point') {
             x = geometry.coordinates[0];
             y = geometry.coordinates[1];
         } else if (geometry.type === 'Polygon') {
-            // Use polylabel-based interior point (pole-of-inaccessibility) when possible
             const c = computePolygonCentroid(geometry);
             if (c) {
                 x = c.x;
                 y = c.y;
             } else {
-                // Fallback to arithmetic mean of outer ring
                 const coords = geometry.coordinates[0];
-                const sum = coords.reduce((acc, [lon, lat]) => ({
-                    x: acc.x + lon,
-                    y: acc.y + lat
-                }), { x: 0, y: 0 });
+                const sum = coords.reduce((acc, [lon, lat]) => ({ x: acc.x + lon, y: acc.y + lat }), { x: 0, y: 0 });
                 x = sum.x / coords.length;
                 y = sum.y / coords.length;
             }
         } else if (geometry.type === 'MultiPolygon') {
-            // Use the centroid of the largest polygon (by area), via polylabel when possible
             const c = computePolygonCentroid(geometry);
             if (c) {
                 x = c.x;
                 y = c.y;
             } else {
-                // Use first polygon's centroid as a conservative fallback
                 const coords = geometry.coordinates[0][0];
-                const sum = coords.reduce((acc, [lon, lat]) => ({
-                    x: acc.x + lon,
-                    y: acc.y + lat
-                }), { x: 0, y: 0 });
+                const sum = coords.reduce((acc, [lon, lat]) => ({ x: acc.x + lon, y: acc.y + lat }), { x: 0, y: 0 });
                 x = sum.x / coords.length;
                 y = sum.y / coords.length;
             }
         } else {
-            throw new Error(`Unsupported geometry type: ${geometry.type}. Supported types: Point, Polygon, MultiPolygon`);
+            // Fallback for other types
+            x = 0; y = 0;
         }
+
+        // Calculate feature bounds
+        const bounds = getFeatureBounds(feature);
         
-        return { x, y };
+        return { id, x, y, bounds };
     });
 
-    // Calculate bounds
-    const bounds = calculateBounds(points);
+    const points = extracted.map(d => ({ x: d.x, y: d.y }));
+    
+    // Calculate global bounds from feature bounds (more accurate than centroid bounds)
+    const globalBounds = {
+        minX: Math.min(...extracted.map(d => d.bounds.minX)),
+        maxX: Math.max(...extracted.map(d => d.bounds.maxX)),
+        minY: Math.min(...extracted.map(d => d.bounds.minY)),
+        maxY: Math.max(...extracted.map(d => d.bounds.maxY))
+    };
+    globalBounds.width = globalBounds.maxX - globalBounds.minX;
+    globalBounds.height = globalBounds.maxY - globalBounds.minY;
 
-    // Auto-calculate grid dimensions based on point count and aspect ratio
-    const { rows, cols } = calculateAutoDimensions(points.length, bounds);
+    // 2. PCA Rotation Decision
+    // We check if rotating the data aligns it better with the axes (smaller bounding box area)
+    const pcaAngle = PCARotation.computeAngle(points);
+    
+    // Calculate global centroid for rotation
+    const globalCentroid = {
+        x: points.reduce((s, p) => s + p.x, 0) / points.length,
+        y: points.reduce((s, p) => s + p.y, 0) / points.length
+    };
 
-    // Estimate compactness based on point spread
-    // If points are spread out, use lower compactness (preserve relative positions)
-    // If points are clustered, use higher compactness (allow more clustering)
-    const compactness = estimateCompactness(points, bounds);
+    // Rotate points to check distribution
+    const rotatedPoints = PCARotation.rotate(points, -pcaAngle, globalCentroid);
+    const rotatedPointsBounds = calculateBounds(rotatedPoints);
+    const pointsBounds = calculateBounds(points);
 
-    // Estimate if PCA rotation would be beneficial
-    // This is a simple heuristic: if the aspect ratio is very different from 1:1,
-    // PCA rotation might help align the data better
-    const rotateByPCA = estimatePCARotation(bounds);
+    // Rotate feature bounds to check true extent
+    // We approximate this by rotating the 4 corners of each feature's bbox
+    const rotatedExtents = extracted.map(d => {
+        const corners = [
+            { x: d.bounds.minX, y: d.bounds.minY },
+            { x: d.bounds.maxX, y: d.bounds.minY },
+            { x: d.bounds.maxX, y: d.bounds.maxY },
+            { x: d.bounds.minX, y: d.bounds.maxY }
+        ];
+        const rotatedCorners = PCARotation.rotate(corners, -pcaAngle, globalCentroid);
+        return calculateBounds(rotatedCorners);
+    });
 
-    return {
+    const rotatedGlobalBounds = {
+        minX: Math.min(...rotatedExtents.map(d => d.minX)),
+        maxX: Math.max(...rotatedExtents.map(d => d.maxX)),
+        minY: Math.min(...rotatedExtents.map(d => d.minY)),
+        maxY: Math.max(...rotatedExtents.map(d => d.maxY))
+    };
+    rotatedGlobalBounds.width = rotatedGlobalBounds.maxX - rotatedGlobalBounds.minX;
+    rotatedGlobalBounds.height = rotatedGlobalBounds.maxY - rotatedGlobalBounds.minY;
+
+    // Decision logic
+    const areaOriginal = globalBounds.width * globalBounds.height;
+    const areaRotated = rotatedGlobalBounds.width * rotatedGlobalBounds.height;
+    
+    const aspectOriginal = Math.max(globalBounds.width, globalBounds.height) / Math.min(globalBounds.width, globalBounds.height);
+    const aspectRotated = Math.max(rotatedGlobalBounds.width, rotatedGlobalBounds.height) / Math.min(rotatedGlobalBounds.width, rotatedGlobalBounds.height);
+
+    const pointsAspectOriginal = Math.max(pointsBounds.width, pointsBounds.height) / Math.min(pointsBounds.width, pointsBounds.height);
+    const pointsAspectRotated = Math.max(rotatedPointsBounds.width, rotatedPointsBounds.height) / Math.min(rotatedPointsBounds.width, rotatedPointsBounds.height);
+
+    // Prefer rotation if:
+    // 1. It significantly reduces the bounding box area (better fit)
+    // 2. OR the original data is very elongated (high aspect ratio) and rotation preserves or improves it
+    // 3. OR the rotated aspect ratio is much higher (indicating a diagonal feature like Japan becoming horizontal/vertical)
+    
+    let rotateByPCA = false;
+    
+    // If area is reduced by > 10%, rotate
+    if (areaOriginal > areaRotated * 1.1) {
+        rotateByPCA = true;
+    } 
+    // If original is somewhat square-ish but rotated is elongated (e.g. diagonal line), rotate
+    else if (aspectRotated > aspectOriginal * 1.5) {
+        rotateByPCA = true;
+    }
+    // If original is already elongated, but rotation makes it tighter
+    else if (aspectOriginal > 1.5 && areaOriginal > areaRotated * 1.05) {
+        rotateByPCA = true;
+    }
+    // Check points aspect ratio as well (centroids might align better than inflated bboxes)
+    else if (pointsAspectRotated > pointsAspectOriginal * 1.5) {
+        rotateByPCA = true;
+    }
+
+    // 3. Grid Dimensions
+    const activeBounds = rotateByPCA ? rotatedPointsBounds : pointsBounds;
+    const rawRatio = activeBounds.height / Math.max(activeBounds.width, 1e-9);
+    let ratioOverride = rawRatio;
+
+    if (rotateByPCA) {
+        ratioOverride = Math.pow(Math.max(rawRatio, 1e-6), 0.6);
+        ratioOverride = ratioOverride + (1 - ratioOverride) * 0.25;
+    }
+
+    ratioOverride = Math.min(2.4, Math.max(0.45, ratioOverride));
+
+    const elongation = Math.max(activeBounds.width, activeBounds.height) /
+        Math.max(1e-9, Math.min(activeBounds.width, activeBounds.height));
+
+    const slackBase = rotateByPCA ? 0.55 : 0.35;
+    const maxSlack = rotateByPCA ? 1.6 : 1.0;
+    const slack = Math.min(maxSlack, Math.max(0, (elongation - 1.3) * slackBase));
+
+    const mapArea = Math.max(globalBounds.width * globalBounds.height, 1e-9);
+    const totalFeatureArea = extracted.reduce((sum, d) => sum + d.bounds.area, 0);
+    const coverageRatio = Math.min(1, totalFeatureArea / mapArea);
+    const coverageBoost = Math.max(0, coverageRatio - 0.35);
+
+    // For small, well-covered datasets (like boroughs), bias strongly towards a squarer grid
+    if (points.length < 50 && coverageBoost > 0.25) {
+        ratioOverride = ratioOverride * 0.1 + 0.9 * 0.85; // push near ~0.85
+    }
+
+    const adjacencyStats = computeAdjacencyStats(extracted);
+    // Reduce adjacency influence (very connected boroughs should not blow up cols)
+    const adjacencyBoost = Math.max(0, (adjacencyStats.averageDegree || 0) - 2.5) * 0.15;
+    const densityBoost = coverageBoost + adjacencyBoost;
+
+    const targetCells = Math.ceil(points.length * (1 + slack + densityBoost * 0.45));
+
+    const elongationBoost = Math.max(0, Math.log2(Math.max(elongation, 1))); // 0 when elongation <=1
+    const sqrtN = Math.sqrt(points.length);
+    // Reduce sensitivity to density/adjacency and keep elongation influence moderate
+    const minRowsScale = 1 + 0.10 * elongationBoost + densityBoost * 0.18;
+    const minColsScale = 1 + (rotateByPCA ? 0.35 : 0.18) * elongationBoost + densityBoost * 0.2;
+    const minRows = Math.max(1, Math.ceil(sqrtN * minRowsScale));
+    let minCols = Math.max(1, Math.ceil(sqrtN * minColsScale));
+    // Cap minCols to avoid unrealistic wide grids for small datasets
+    const maxColsCap = Math.max(3, Math.ceil(sqrtN * 3));
+    minCols = Math.min(minCols, maxColsCap);
+
+    const { rows, cols } = calculateAutoDimensions(points.length, activeBounds, {
+        aspectRatio: ratioOverride,
+        targetCellCount: targetCells,
+        minRows,
+        minCols
+    });
+
+    // 4. Compactness Estimation
+    const compactness = estimateCompactnessAdvanced(extracted, globalBounds, {
+        useAdjacency: true,
+        adjacencyStats
+    });
+
+    const result = {
         rows,
         cols,
         compactness,
         rotateByPCA
+    };
+
+    // Optionally compute adjacency graph and a lightweight embedding to produce per-feature targets
+    if (computeEmbedding) {
+        const adj = computeAdjacencyGraph(geojson.features);
+        // Embed using force-directed layout scaled into the active bounds
+        const active = rotateByPCA ? rotatedGlobalBounds : globalBounds;
+        const embedRaw = embedGraph(adj.nodes, adj.edges, Object.assign({ iterations: 400, width: Math.max(1e-9, active.width), height: Math.max(1e-9, active.height) }, embeddingOptions));
+        // Translate embedded coordinates into map space
+        const embeddingTargets = {};
+        Object.keys(embedRaw).forEach(id => {
+            embeddingTargets[id] = {
+                x: (active.minX ?? globalBounds.minX) + embedRaw[id].x,
+                y: (active.minY ?? globalBounds.minY) + embedRaw[id].y
+            };
+        });
+        result.adjacencyGraph = adj;
+        result.embeddingTargets = embeddingTargets;
+    }
+
+    return result;
+}
+
+/**
+ * Calculate bounding box for a feature
+ */
+function getFeatureBounds(feature) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    function expand(coord) {
+        if (coord[0] < minX) minX = coord[0];
+        if (coord[0] > maxX) maxX = coord[0];
+        if (coord[1] < minY) minY = coord[1];
+        if (coord[1] > maxY) maxY = coord[1];
+    }
+
+    function traverse(coords) {
+        if (!Array.isArray(coords)) return;
+        const first = coords[0];
+        if (Array.isArray(first) && first.length > 0 && typeof first[0] !== 'number') {
+            coords.forEach(traverse);
+            return;
+        }
+
+        if (Array.isArray(first) && typeof first[0] === 'number') {
+            coords.forEach(expand);
+            return;
+        }
+
+        // Handle direct coordinate pair
+        if (typeof coords[0] === 'number') {
+            expand(coords);
+        }
+    }
+
+    traverse(feature.geometry.coordinates);
+
+    return {
+        minX, maxX, minY, maxY,
+        width: maxX - minX,
+        height: maxY - minY,
+        area: (maxX - minX) * (maxY - minY) // Approximation using bbox area
+    };
+}
+
+/**
+ * Advanced Compactness Estimation
+ */
+function estimateCompactnessAdvanced(extractedData, bounds, options = {}) {
+    const points = extractedData.map(d => ({ x: d.x, y: d.y }));
+    const n = points.length;
+    if (n < 2) return 0.5;
+
+    const totalArea = bounds.width * bounds.height || 1;
+    const pointsBounds = calculateBounds(points);
+    const aspect = Math.max(pointsBounds.width, pointsBounds.height) /
+        Math.max(1e-9, Math.min(pointsBounds.width, pointsBounds.height));
+
+    // 1. Nearest Neighbor Index (NNI)
+    // Measures clustering. < 1 is clustered, > 1 is dispersed.
+    let sumMinDist = 0;
+    for (let i = 0; i < n; i++) {
+        let minDist = Infinity;
+        for (let j = 0; j < n; j++) {
+            if (i === j) continue;
+            const dx = points[i].x - points[j].x;
+            const dy = points[i].y - points[j].y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < minDist) minDist = d;
+        }
+        if (minDist < Infinity) sumMinDist += minDist;
+    }
+    
+    const observedMeanDist = sumMinDist / n;
+    const density = n / totalArea;
+    const expectedMeanDist = 0.5 / Math.sqrt(density);
+    const nni = expectedMeanDist > 0 ? observedMeanDist / expectedMeanDist : 1;
+
+    // 2. Coverage Ratio
+    // How much of the bounding box is covered by feature bboxes?
+    const totalFeatureArea = extractedData.reduce((sum, d) => sum + d.bounds.area, 0);
+    const coverageRatio = Math.min(1, totalFeatureArea / totalArea);
+
+    // Base compactness — bias slightly upward for administrative/contiguous regions
+    let compactness = 0.55;
+
+    // Adjust based on NNI (clustering)
+    if (nni < 0.7) {
+        compactness += 0.05;
+    } else if (nni > 1.2) {
+        compactness -= 0.03;
+    }
+
+    // Adjust based on Coverage (dense coverage -> can be more compact)
+    if (coverageRatio > 0.5) {
+        compactness += 0.03;
+    } else if (coverageRatio < 0.1) {
+        compactness += 0.05;
+    }
+
+    // 3. Adjacency (Topology)
+    if (options.useAdjacency) {
+        const stats = options.adjacencyStats || computeAdjacencyStats(extractedData);
+        const averageDegree = stats?.averageDegree ?? 0;
+        
+        if (averageDegree > 3.5) {
+            compactness += 0.02;
+        } else if (averageDegree < 1.5) {
+            compactness += 0.03;
+        }
+    }
+
+    if (aspect > 2.3) {
+        const weight = Math.min(1, (aspect - 2.3) / 2.0);
+        const mid = 0.5;
+        compactness = mid + (compactness - mid) * (1 - weight);
+        compactness = Math.max(0.45, Math.min(0.65, compactness));
+    }
+
+    return Math.max(0.35, Math.min(0.85, compactness));
+}
+
+function computeAdjacencyStats(extractedData) {
+    const n = extractedData.length;
+    if (n < 2) return { averageDegree: 0, maxDegree: 0 };
+
+    const degrees = new Array(n).fill(0);
+    
+    // Use a small buffer for "touching"
+    // Estimate buffer as a fraction of average feature size
+    const avgWidth = extractedData.reduce((s, d) => s + d.bounds.width, 0) / n;
+    const buffer = avgWidth * 0.05;
+
+    for (let i = 0; i < n; i++) {
+        const a = extractedData[i].bounds;
+        for (let j = i + 1; j < n; j++) {
+            const b = extractedData[j].bounds;
+            
+            // Check overlap with buffer
+            const overlap = !(
+                a.maxX + buffer < b.minX - buffer ||
+                a.minX - buffer > b.maxX + buffer ||
+                a.maxY + buffer < b.minY - buffer ||
+                a.minY - buffer > b.maxY + buffer
+            );
+
+            if (overlap) {
+                degrees[i]++;
+                degrees[j]++;
+            }
+        }
+    }
+
+    const totalDegree = degrees.reduce((s, d) => s + d, 0);
+    const maxDegree = Math.max(...degrees);
+
+    return {
+        averageDegree: totalDegree / n,
+        maxDegree
     };
 }
 
@@ -141,17 +450,32 @@ function estimateCompactness(points, bounds) {
 
 /**
  * Estimate if PCA rotation would be beneficial
+ * @param {Array} points - Array of points
  * @param {Object} bounds - Bounds object
  * @returns {boolean} Whether PCA rotation is recommended
  */
-function estimatePCARotation(bounds) {
-    // Simple heuristic: if aspect ratio is very different from 1:1, PCA might help
-    // But for most cases, default to false (let user decide)
-    const aspectRatio = bounds.width / (bounds.height || 1);
+function estimatePCARotation(points, bounds) {
+    if (!points || points.length < 2) return false;
+
+    // Calculate PCA angle
+    const angle = PCARotation.computeAngle(points);
     
-    // If aspect ratio is very extreme (< 0.3 or > 3), PCA rotation might help
-    // But we'll be conservative and default to false
-    return false; // Conservative default - let user enable if needed
+    // Rotate points
+    const rotatedPoints = PCARotation.rotate(points, -angle);
+    const rotatedBounds = calculateBounds(rotatedPoints);
+    
+    const areaOriginal = bounds.width * bounds.height;
+    const areaRotated = rotatedBounds.width * rotatedBounds.height;
+    
+    const aspectOriginal = Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height);
+    const aspectRotated = Math.max(rotatedBounds.width, rotatedBounds.height) / Math.min(rotatedBounds.width, rotatedBounds.height);
+
+    // Same logic as in estimateParameters
+    if (areaOriginal > areaRotated * 1.1) return true;
+    if (aspectRotated > aspectOriginal * 1.5) return true;
+    if (aspectOriginal > 1.5 && areaOriginal > areaRotated * 1.05) return true;
+    
+    return false;
 }
 
 /**
@@ -188,7 +512,7 @@ export function estimateParametersFromData(data, options = {}) {
     const compactness = estimateCompactness(points, bounds);
 
     // Estimate PCA rotation
-    const rotateByPCA = estimatePCARotation(bounds);
+    const rotateByPCA = estimatePCARotation(points, bounds);
 
     return {
         rows,

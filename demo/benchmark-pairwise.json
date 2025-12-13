@@ -1,0 +1,12 @@
+{
+  "baselineTime": 40,
+  "pairwiseTime": 12,
+  "baselineScore": 692.81395890853,
+  "pairwiseScore": 692.81395890853,
+  "pairwiseStats": {
+    "baselinePairwiseVars": 0,
+    "baselinePairwiseConstraints": 0,
+    "pairwiseVars": 0,
+    "pairwiseConstraints": 0
+  }
+}

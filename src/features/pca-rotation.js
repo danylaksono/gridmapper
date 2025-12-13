@@ -29,15 +29,24 @@ export class PCARotation {
     }
 
     /**
-     * Rotate points around their centroid by angle (radians)
+     * Rotate points around a center point by angle (radians)
      * @param {Array} points - Array of points with x, y properties
      * @param {number} angle - Rotation angle in radians
+     * @param {Object} [center] - Optional center point {x, y}. If not provided, centroid of points is used.
      * @returns {Array} New array of rotated points
      */
-    static rotate(points, angle) {
+    static rotate(points, angle, center) {
         if (!points || points.length === 0) return points.map(p => ({ ...p }));
-        const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-        const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+        
+        let cx, cy;
+        if (center) {
+            cx = center.x;
+            cy = center.y;
+        } else {
+            cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+            cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+        }
+
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
         return points.map(p => ({
