@@ -1,0 +1,91 @@
+name: Draft Release Publish
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: https://registry.npmjs.org
+
+      - name: Determine and set version
+        id: determine
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          if [ -n "$TAG" ]; then
+            V="${TAG#v}"
+            if printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Using tag version $V"
+              npm version "$V" --no-git-tag-version
+              echo "version=$V" >> "$GITHUB_OUTPUT"
+            else
+              echo "Tag $TAG isn't semver, will bump patch"
+              npm version patch --no-git-tag-version
+              V=$(node -pe "require('./package.json').version")
+              echo "version=$V" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            npm version patch --no-git-tag-version
+            V=$(node -pe "require('./package.json').version")
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and tag
+        run: |
+          VERSION=${{ steps.determine.outputs.version }}
+          git add package.json package-lock.json || true
+          git commit -m "chore(release): v$VERSION [skip ci]" || echo "No changes to commit"
+          git tag -a "v$VERSION" -m "v$VERSION" || echo "Tag exists"
+          git push origin HEAD --follow-tags
+
+      - name: Install & build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "NPM_TOKEN not set; skipping publish" && exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --access public
+
+      - name: Publish GitHub release
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const release_id = context.payload.release.id;
+            const version = process.env.VERSION || '${{ steps.determine.outputs.version }}';
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id,
+              tag_name: `v${version}`,
+              draft: false
+            });
+        env:
+          VERSION: ${{ steps.determine.outputs.version }}

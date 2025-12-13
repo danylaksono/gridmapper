@@ -311,6 +311,20 @@ For development with watch mode:
 npm run dev
 ```
 
+## CI Publishing (Draft releases)
+
+- Add an npm Automation token to your repository secrets as `NPM_TOKEN` (set an expiry and package/CIDR restrictions where possible).
+- Create a Draft release in GitHub (you may supply a `vX.Y.Z` tag name or leave it blank).
+- On draft creation the workflow `.github/workflows/draft-release-publish.yml` will bump or set the `package.json` version, commit and tag, build, publish to npm, and mark the GitHub release as published.
+
+Notes:
+- The workflow requires the `NPM_TOKEN` secret and `GITHUB_TOKEN` (provided by Actions). Use an Automation token (least privilege) and rotate regularly.
+
+Automatic changelog & versioning
+
+- The repository is configured to use [Release Please](https://github.com/google-github-actions/release-please-action) to generate CHANGELOG entries and bump versions following conventional commits.
+- On a push to `main`, Release Please will open a release PR or create a release (depending on configuration) that includes changelog and `package.json` version changes. Merge that PR (or accept the created release) to trigger the publish workflow.
+- If you prefer releases to be drafts, you can set `create-release: true` and `draft: true` in `.github/workflows/release-please.yml` inputs.
 ## License
 
 ISC
