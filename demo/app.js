@@ -18,6 +18,7 @@ let currentSharedTransform = d3.zoomIdentity;
 let originalMapSyncApi = null;
 let gridMapSyncApi = null;
 let isSyncingMaps = false;
+let linkedHoverKey = null;
 
 // UI elements
 const compactnessSlider = document.getElementById('compactness');
@@ -140,6 +141,35 @@ function normalizeGridDimension(rawValue, minValue, maxValue, fallbackValue) {
     const fallback = Number.isFinite(fallbackValue) ? fallbackValue : min;
     const safe = Number.isFinite(parsed) ? parsed : fallback;
     return Math.max(min, Math.min(max, safe));
+}
+
+function getFeatureKey(feature, index) {
+    if (feature?.id !== undefined && feature?.id !== null) {
+        return String(feature.id);
+    }
+    return `feature_${index}`;
+}
+
+function escapeAttributeValue(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function clearLinkedHover() {
+    linkedHoverKey = null;
+    d3.selectAll('.linked-highlight').classed('linked-highlight', false);
+}
+
+function setLinkedHover(featureKey) {
+    if (featureKey === undefined || featureKey === null) {
+        clearLinkedHover();
+        return;
+    }
+
+    const key = String(featureKey);
+    clearLinkedHover();
+    linkedHoverKey = key;
+    const escapedKey = escapeAttributeValue(key);
+    d3.selectAll(`[data-feature-key="${escapedKey}"]`).classed('linked-highlight', true);
 }
 
 // Update compactness display
@@ -697,6 +727,7 @@ function drawOriginalMap(geojson) {
         .enter()
         .append('path')
         .attr('class', 'borough')
+        .attr('data-feature-key', (d, i) => getFeatureKey(d, i))
         .attr('d', d => {
             try {
                 return path(d) || '';
@@ -712,11 +743,13 @@ function drawOriginalMap(geojson) {
         })
         .on('mouseover', function (event, d) {
             d3.select(this).attr('fill', '#357abd');
+            setLinkedHover(getFeatureKey(d, geojson.features.indexOf(d)));
             const name = d.properties?.name || d.properties?.PROVINSI || d.id || 'Feature';
             showTooltip(event, name);
         })
         .on('mouseout', function (event, d) {
             d3.select(this).attr('fill', '#4a90e2');
+            clearLinkedHover();
             hideTooltip();
         });
 
@@ -913,16 +946,19 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
 
             const cell = g.append('path')
                 .attr('class', 'grid-cell')
+                .attr('data-feature-key', String(assignment.id))
                 .attr('d', hexagonPath(cx, cy, hexRadius))
                 .attr('fill', colorScale(i % 10))
                 .attr('stroke', 'white')
                 .attr('stroke-width', 1.5)
                 .on('mouseover', function (event) {
                     d3.select(this).attr('opacity', 0.7);
+                    setLinkedHover(assignment.id);
                     showTooltip(event, assignment.name);
                 })
                 .on('mouseout', function (event) {
                     d3.select(this).attr('opacity', 1);
+                    clearLinkedHover();
                     hideTooltip();
                 });
 
@@ -1046,6 +1082,7 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
 
             const cell = g.append('rect')
                 .attr('class', 'grid-cell')
+                .attr('data-feature-key', String(assignment.id))
                 .attr('x', x)
                 .attr('y', y)
                 .attr('width', cellWidth)
@@ -1053,10 +1090,12 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                 .attr('fill', colorScale(i % 10))
                 .on('mouseover', function (event) {
                     d3.select(this).attr('opacity', 0.7);
+                    setLinkedHover(assignment.id);
                     showTooltip(event, assignment.name);
                 })
                 .on('mouseout', function (event) {
                     d3.select(this).attr('opacity', 1);
+                    clearLinkedHover();
                     hideTooltip();
                 });
 

@@ -536,6 +536,13 @@ body {
     fill: #357abd;
 }
 
+.borough.linked-highlight,
+.grid-cell.linked-highlight {
+    stroke: #0f2430;
+    stroke-width: 2.5;
+    filter: saturate(1.2) brightness(0.95);
+}
+
 .grid-cell.editable {
     cursor: move;
 }
