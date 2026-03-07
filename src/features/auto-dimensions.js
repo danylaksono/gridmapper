@@ -9,27 +9,41 @@
  * @param {Object} bounds - Bounds object with width and height properties
  * @returns {Object} Object with rows and cols properties
  */
-export function calculateAutoDimensions(n, bounds) {
-    // Aspect ratio of the geography
-    // Prevent divide by zero if width is 0 (unlikely)
-    const ratio = bounds.height / (bounds.width || 1);
+export function calculateAutoDimensions(n, bounds, options = {}) {
+    const {
+        aspectRatio = bounds.height / (bounds.width || 1),
+        targetCellCount = n,
+        minRows = 1,
+        minCols = 1
+    } = options;
 
-    // Solve for cols: 
-    // Area ~= n
-    // rows / cols ~= ratio  => rows = cols * ratio
-    // (cols * ratio) * cols = n
-    // cols^2 * ratio = n
-    // cols = sqrt(n / ratio)
-    
-    let cols = Math.round(Math.sqrt(n / ratio));
-    // Boundary check
+    const safeAspect = aspectRatio > 0 ? aspectRatio : 1;
+    const cells = Math.max(targetCellCount, n, 1);
+
+    let cols = Math.round(Math.sqrt(cells / safeAspect));
     if (cols < 1) cols = 1;
-    
-    let rows = Math.ceil(n / cols);
 
-    // Ensure we have enough slots
-    while ((rows * cols) < n) {
-        rows++;
+    let rows = Math.ceil(cells / cols);
+
+    rows = Math.max(rows, minRows);
+    cols = Math.max(cols, minCols);
+
+    while ((rows * cols) < cells) {
+        if ((rows / safeAspect) <= cols) {
+            rows++;
+        } else {
+            cols++;
+        }
+    }
+
+    if ((rows * cols) < n) {
+        while ((rows * cols) < n) {
+            if (rows <= cols) {
+                rows++;
+            } else {
+                cols++;
+            }
+        }
     }
 
     return { rows, cols };

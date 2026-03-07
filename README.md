@@ -6,11 +6,11 @@ A JavaScript library for allocating geographic points to a grid using Mixed Inte
 
 ![](./gridmapper_demo.png)
 
-see the [example/](./example) directory for the interactive demo and usage example.
+see the [demo](https://danylaksono.is-a.dev/gridmapper/demo/) for the interactive demo and usage example.
 
 ## Inspiration
 
-This library is inspired by and builds upon the work of **Jo Wood's Grid Map Allocation** library ([@gridmap_allocation](https://observablehq.com/@jwolondon/gridmap-allocation)). The original implementation demonstrated the concept of using linear programming to allocate geographic points to grid cells. This library extends that work with small additional features and optimizations.
+This library is inspired by and builds upon the work of **Jo Wood's Grid Map Allocation** library ([@gridmap_allocation](https://observablehq.com/@jwolondon/gridmap-allocation)). The original implementation demonstrated the concept of using linear programming to allocate geographic points to grid cells. This library extends that work with small additional features and optimisations.
 
 ## Features
 

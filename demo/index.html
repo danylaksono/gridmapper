@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<!--
+    GridMapper - London Boroughs Demo
+    
+    This example demonstrates the GridMapper API with London boroughs data.
+    It shows the original map and grid cartogram side-by-side, allowing users
+    to adjust configuration parameters and see instant updates.
+    
+     To run this example:
+     1. No build required — the example imports the local `src/index.js` (ES Module). Note: this will use local source files, so serve the repository root directory when running the example.
+     2. Serve this directory with a web server (required for ES modules and CORS):
+         - Python: python -m http.server 8000
+         - Node: npx http-server -p 8000
+         - Or use any other web server
+     3. Open http://localhost:8000/example/index.html in your browser
+-->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridMapper Cartogram Demo</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "polylabel": "https://esm.sh/polylabel@1.1.0"
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div id="error-container"></div>
+        <header class="app-header panel-card">
+            <div class="app-header-main">
+                <h1>GridMapper Cartogram Studio</h1>
+                <p class="subtitle">Upload GeoJSON, tune allocation, and export synchronized grid cartograms.</p>
+            </div>
+            <a class="header-badge" href="https://github.com/danylaksono/gridmapper" target="_blank"
+                rel="noopener noreferrer">
+                GitHub • gridmapper
+            </a>
+        </header>
+
+        <main class="main-layout">
+            <section class="workspace panel-card" aria-label="Map workspace">
+                <div class="workspace-head">
+                    <h2>Map Workspace</h2>
+                    <p>Pan and zoom either map to compare original geography with the cartogram.</p>
+                </div>
+                <div class="maps-container">
+                    <div class="map-panel">
+                        <h3>Original Map</h3>
+                        <div class="map-container" id="original-map">
+                            <div class="map-state map-state-info">Loading geographic source map...</div>
+                        </div>
+                    </div>
+                    <div class="map-panel">
+                        <h3>Grid Cartogram</h3>
+                        <div class="map-container" id="grid-map">
+                            <div class="map-state map-state-muted">Cartogram will appear after allocation.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="control-dock" aria-label="Control panel">
+                <section class="dock-section panel-card data-section">
+                    <h3>Data Source</h3>
+                    <div class="data-section-content">
+                        <div class="file-upload-wrapper">
+                            <input type="file" id="file-upload" accept=".geojson,.json" />
+                        </div>
+                        <div class="file-info" id="file-info">Using default: london.geojson</div>
+                        <button id="reset-data" class="reset-button" disabled>Reset to Default</button>
+                    </div>
+                </section>
+
+                <section class="dock-section panel-card status" id="status">
+                    <h3>Run Status</h3>
+                    <div class="status-content">
+                        <div class="status-message"><strong>Status:</strong> <span id="status-text">Loading...</span>
+                        </div>
+                        <!-- <div class="status-stats" aria-label="Run metrics">
+                            <div class="stat-item">
+                                <span class="stat-label">Features</span>
+                                <span class="stat-value" id="stat-feature-count">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Grid</span>
+                                <span class="stat-value" id="stat-grid-size">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Score</span>
+                                <span class="stat-value" id="stat-score">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Mode</span>
+                                <span class="stat-value" id="stat-mode">Auto</span>
+                            </div>
+                        </div> -->
+                        <button id="export-geojson" class="export-button" disabled>Export GeoJSON</button>
+                    </div>
+                </section>
+
+                <section class="dock-section panel-card controls">
+                    <div class="controls-grid">
+                        <div class="control-section">
+                            <div class="control-section-title">Grid Configuration</div>
+                            <div class="control-group">
+                                <label for="grid-type">Grid Type</label>
+                                <select id="grid-type">
+                                    <option value="rect">Rectangular</option>
+                                    <option value="hex">Hexagonal</option>
+                                </select>
+                                <p class="control-help">Pick the visual tiling strategy for each assigned region.</p>
+                            </div>
+                            <div class="control-group">
+                                <label for="rows-slider">Grid Rows</label>
+                                <div class="dual-input">
+                                    <input type="range" id="rows-slider" min="1" max="100" step="1" value="6">
+                                    <input type="number" id="rows" min="1" max="100" value="6">
+                                </div>
+                                <p class="control-help">Higher rows increase vertical resolution but can reduce label
+                                    room.</p>
+                            </div>
+                            <div class="control-group">
+                                <label for="cols-slider">Grid Columns</label>
+                                <div class="dual-input">
+                                    <input type="range" id="cols-slider" min="1" max="100" step="1" value="6">
+                                    <input type="number" id="cols" min="1" max="100" value="6">
+                                </div>
+                                <p class="control-help">Tune together with rows to avoid over-sparse or overcrowded
+                                    grids.</p>
+                            </div>
+                        </div>
+
+                        <div class="control-section">
+                            <div class="control-section-title">Allocation Settings</div>
+                            <div class="control-group">
+                                <label for="compactness">Compactness</label>
+                                <input type="range" id="compactness" min="0" max="1" step="0.05" value="0.5">
+                                <span class="value-display" id="compactness-value">0.5</span>
+                                <p class="control-help">Lower keeps relative geography, higher tightens clusters toward
+                                    center.</p>
+                            </div>
+                            <div class="control-group">
+                                <label for="distance-metric">Distance Metric</label>
+                                <select id="distance-metric">
+                                    <option value="euclidean">Euclidean</option>
+                                    <option value="manhattan">Manhattan</option>
+                                </select>
+                                <p class="control-help">Manhattan can produce more orthogonal placements on rectangular
+                                    grids.</p>
+                            </div>
+                            <div class="control-group">
+                                <label for="rotate-pca">
+                                    <input type="checkbox" id="rotate-pca"> Rotate by PCA
+                                </label>
+                                <p class="control-help">Auto-rotates input orientation to better align long geographic
+                                    footprints.</p>
+                            </div>
+                        </div>
+
+                        <div class="control-section">
+                            <div class="control-section-title">Edit Mode</div>
+                            <div class="control-group">
+                                <label for="edit-mode">
+                                    <input type="checkbox" id="edit-mode"> Enable visual edit mode
+                                </label>
+                                <p class="control-help">Drag cells in the cartogram map for manual refinement after
+                                    solve.</p>
+                            </div>
+                            <div class="control-group">
+                                <button id="reset-edits" class="reset-button" disabled>Reset Edits</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </main>
+
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>

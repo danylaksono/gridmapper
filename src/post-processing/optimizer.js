@@ -1,8 +1,7 @@
 /**
  * Post-Processing Optimizer
  * Greedy swap optimization and simulated annealing for improving allocations
- */
-
+ */import { reduceCutEdges } from './adjacency-fixer.js';
 /**
  * Post-process swap heuristic: greedy pairwise swaps and moves to empty cells.
  * @param {Array} assignments - Array of assignment objects with gridX, gridY, originalData
@@ -184,6 +183,17 @@ export function postProcessSwaps(assignments, normPoints, rows, cols, cfg = {}) 
         for (let k = 0; k < assignments.length; k++) {
             assignments[k].gridX = bestAssign[k].gridX;
             assignments[k].gridY = bestAssign[k].gridY;
+        }
+    }
+
+    // Optionally run adjacency-specific local fixer to reduce feature cut edges
+    if (cfg.adjacencyGraph && cfg.runAdjacencyFix) {
+        try {
+            const res = reduceCutEdges(assignments, cfg.adjacencyGraph, rows, cols, { maxIter: cfg.adjFixIter || 500, adjacencyDiagonal: cfg.adjacencyDiagonal, spacerSet: cfg.spacerSet });
+            assignments = res.assignments;
+            return { assignments, meta: { iterations: iter, swaps, adjFix: res.meta } };
+        } catch (e) {
+            // ignore and return standard results
         }
     }
 

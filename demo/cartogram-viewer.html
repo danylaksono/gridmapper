@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dorling Cartogram Viewer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            flex: 1;
+            min-width: 400px;
+        }
+
+        .card h2 {
+            margin: 0 0 15px 0;
+            color: #555;
+            font-size: 16px;
+        }
+
+        svg {
+            width: 100%;
+            height: 400px;
+            background: #fafafa;
+            border-radius: 4px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        select,
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            margin-right: 10px;
+        }
+
+        button {
+            background: #4a90d9;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #3a7bc8;
+        }
+
+        .legend {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Dorling Cartogram Visualization</h1>
+
+    <div class="controls">
+        <select id="dataSelect">
+            <option value="dorling-output.json">Circles (Dorling)</option>
+            <option value="hexagon-output.json">Hexagons</option>
+            <option value="demers-output.json">Squares (Demers)</option>
+        </select>
+        <button onclick="loadData()">Load</button>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Original Positions (London Boroughs)</h2>
+            <svg id="originalSvg"></svg>
+            <div class="legend">Circle size = population</div>
+        </div>
+        <div class="card">
+            <h2>Cartogram Result</h2>
+            <svg id="cartogramSvg"></svg>
+            <div class="legend" id="metadata"></div>
+        </div>
+    </div>
+
+    <script>
+        // Color scale based on borough name hash
+        function hashColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const h = Math.abs(hash) % 360;
+            return `hsl(${h}, 60%, 50%)`;
+        }
+
+        async function loadData() {
+            const filename = document.getElementById('dataSelect').value;
+
+            try {
+                // Load cartogram result
+                const response = await fetch(filename);
+                const geojson = await response.json();
+
+                // Also load original london data
+                const origResponse = await fetch('london.geojson');
+                const originalData = await origResponse.json();
+
+                renderOriginal(originalData, geojson);
+                renderCartogram(geojson);
+
+                // Show metadata
+                const meta = geojson.metadata || {};
+                document.getElementById('metadata').innerHTML =
+                    `Shape: ${meta.shapeType} | Features: ${meta.featureCount} | ` +
+                    `Overlaps: ${meta.hasOverlaps ? 'Yes' : 'No'} | k=${meta.k}`;
+
+            } catch (e) {
+                alert('Error loading data: ' + e.message);
+            }
+        }
+
+        function renderOriginal(originalData, cartogramData) {
+            const svg = document.getElementById('originalSvg');
+            svg.innerHTML = '';
+
+            // Get bounds from cartogram metadata
+            const bounds = cartogramData.metadata?.bounds || getBounds(originalData);
+            const { transform } = getTransform(bounds, svg);
+
+            // Draw centroids as circles scaled by population
+            const features = originalData.features.map((f, i) => {
+                // Get centroid (approximate from first coordinate of first polygon)
+                const geom = f.geometry;
+                let coords;
+                if (geom.type === 'MultiPolygon') {
+                    coords = geom.coordinates[0][0];
+                } else if (geom.type === 'Polygon') {
+                    coords = geom.coordinates[0];
+                }
+
+                // Calculate centroid
+                let cx = 0, cy = 0;
+                for (const [x, y] of coords) {
+                    cx += x; cy += y;
+                }
+                cx /= coords.length;
+                cy /= coords.length;
+
+                // Get corresponding cartogram feature for radius
+                const cartFeature = cartogramData.features[i];
+                const cartCoords = cartFeature?.geometry?.coordinates?.[0];
+                let r = 10;
+                if (cartCoords) {
+                    // Calculate radius from cartogram circle
+                    let ccx = 0, ccy = 0;
+                    for (const [x, y] of cartCoords) {
+                        ccx += x; ccy += y;
+                    }
+                    ccx /= cartCoords.length;
+                    ccy /= cartCoords.length;
+                    r = Math.sqrt(Math.pow(cartCoords[0][0] - ccx, 2) +
+                        Math.pow(cartCoords[0][1] - ccy, 2));
+                }
+
+                return { cx, cy, r, name: f.properties.LAD13NM || `Feature ${i}` };
+            });
+
+            // Draw circles
+            features.forEach(f => {
+                const [x, y] = transform([f.cx, f.cy]);
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', x);
+                circle.setAttribute('cy', y);
+                circle.setAttribute('r', f.r * (svg.clientWidth / (bounds.maxX - bounds.minX)));
+                circle.setAttribute('fill', hashColor(f.name));
+                circle.setAttribute('fill-opacity', '0.7');
+                circle.setAttribute('stroke', '#333');
+                circle.setAttribute('stroke-width', '0.5');
+
+                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                title.textContent = f.name;
+                circle.appendChild(title);
+
+                svg.appendChild(circle);
+            });
+        }
+
+        function renderCartogram(geojson) {
+            const svg = document.getElementById('cartogramSvg');
+            svg.innerHTML = '';
+
+            const bounds = getBoundsFromFeatures(geojson.features);
+            const { transform } = getTransform(bounds, svg);
+
+            // Draw each feature
+            geojson.features.forEach((feature, i) => {
+                const coords = feature.geometry.coordinates[0];
+                const name = feature.properties.LAD13NM || `Feature ${i}`;
+
+                // Convert to SVG path
+                const points = coords.map(([x, y]) => transform([x, y]).join(',')).join(' ');
+
+                const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                polygon.setAttribute('points', points);
+                polygon.setAttribute('fill', hashColor(name));
+                polygon.setAttribute('fill-opacity', '0.7');
+                polygon.setAttribute('stroke', '#333');
+                polygon.setAttribute('stroke-width', '0.5');
+
+                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                title.textContent = name;
+                polygon.appendChild(title);
+
+                svg.appendChild(polygon);
+            });
+        }
+
+        function getBounds(geojson) {
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            geojson.features.forEach(f => {
+                const coords = f.geometry.type === 'MultiPolygon'
+                    ? f.geometry.coordinates[0][0]
+                    : f.geometry.coordinates[0];
+
+                coords.forEach(([x, y]) => {
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                });
+            });
+
+            return { minX, maxX, minY, maxY };
+        }
+
+        function getBoundsFromFeatures(features) {
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            features.forEach(f => {
+                const coords = f.geometry.coordinates[0];
+                coords.forEach(([x, y]) => {
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                });
+            });
+
+            return { minX, maxX, minY, maxY };
+        }
+
+        function getTransform(bounds, svg) {
+            const width = svg.clientWidth || 400;
+            const height = svg.clientHeight || 400;
+            const padding = 20;
+
+            const dataWidth = bounds.maxX - bounds.minX;
+            const dataHeight = bounds.maxY - bounds.minY;
+
+            const scale = Math.min(
+                (width - 2 * padding) / dataWidth,
+                (height - 2 * padding) / dataHeight
+            );
+
+            const offsetX = (width - dataWidth * scale) / 2;
+            const offsetY = (height - dataHeight * scale) / 2;
+
+            return {
+                transform: ([x, y]) => [
+                    (x - bounds.minX) * scale + offsetX,
+                    (bounds.maxY - y) * scale + offsetY  // Flip Y for SVG
+                ],
+                scale
+            };
+        }
+
+        // Load on page load
+        loadData();
+    </script>
+</body>
+
+</html>
