@@ -8,7 +8,7 @@ const banner = `/*!
  * ${pkg.name} v${pkg.version}
  * ${pkg.description}
  * 
- * Inspired by Jo Wood's Grid Map Allocation
+ * Based on Jo Wood's Grid Map Allocation
  * https://observablehq.com/@jwolondon/gridmap-allocation
  * 
  * (c) ${new Date().getFullYear()} ${pkg.author || 'Contributors'}

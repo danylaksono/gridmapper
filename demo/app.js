@@ -9,8 +9,15 @@ let originalBounds = null;
 let currentResult = null;
 let currentGridType = 'rect';
 let currentGeoJson = null;
+let currentSourceFileName = 'london.geojson';
 let isUsingDefaultData = true;
 let isUpdatingParameters = false; // Flag to prevent recursive updates
+
+// Shared map interaction state so both maps stay synchronized.
+let currentSharedTransform = d3.zoomIdentity;
+let originalMapSyncApi = null;
+let gridMapSyncApi = null;
+let isSyncingMaps = false;
 
 // UI elements
 const compactnessSlider = document.getElementById('compactness');
@@ -19,8 +26,14 @@ const gridTypeSelect = document.getElementById('grid-type');
 const distanceMetricSelect = document.getElementById('distance-metric');
 const rowsInput = document.getElementById('rows');
 const colsInput = document.getElementById('cols');
+const rowsSlider = document.getElementById('rows-slider');
+const colsSlider = document.getElementById('cols-slider');
 const rotatePCAInput = document.getElementById('rotate-pca');
 const statusText = document.getElementById('status-text');
+const statFeatureCount = document.getElementById('stat-feature-count');
+const statGridSize = document.getElementById('stat-grid-size');
+const statScore = document.getElementById('stat-score');
+const statMode = document.getElementById('stat-mode');
 const errorContainer = document.getElementById('error-container');
 const tooltip = document.getElementById('tooltip');
 const exportButton = document.getElementById('export-geojson');
@@ -60,6 +73,73 @@ function getMapWidth() {
 
 function getMapHeight() {
     return mapDimensions.height;
+}
+
+function applySharedTransform(svg, zoom) {
+    isSyncingMaps = true;
+    svg.call(zoom.transform, currentSharedTransform);
+    isSyncingMaps = false;
+}
+
+function syncMapTransforms(sourceMap, transform) {
+    if (isSyncingMaps) return;
+
+    currentSharedTransform = transform;
+    const target = sourceMap === 'original' ? gridMapSyncApi : originalMapSyncApi;
+    if (!target) return;
+
+    isSyncingMaps = true;
+    target.svg.call(target.zoom.transform, transform);
+    isSyncingMaps = false;
+}
+
+function getCartogramExportFileName(sourceFileName) {
+    const fallback = 'exported';
+    const safeName = (typeof sourceFileName === 'string' && sourceFileName.trim()) ? sourceFileName.trim() : fallback;
+    const baseName = safeName
+        .replace(/^.*[\\/]/, '')
+        .replace(/\.geojson$/i, '')
+        .replace(/\.[^/.]+$/, '');
+
+    return `${baseName || fallback}_cartogram.geojson`;
+}
+
+function setMapState(containerId, message, tone = 'info') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let state = container.querySelector('.map-state');
+    if (!state) {
+        state = document.createElement('div');
+        container.appendChild(state);
+    }
+
+    state.className = `map-state map-state-${tone}`;
+    state.textContent = message;
+}
+
+function updateRunStats({ featureCount, gridSize, score, mode } = {}) {
+    if (statFeatureCount && featureCount !== undefined) {
+        statFeatureCount.textContent = featureCount;
+    }
+    if (statGridSize && gridSize !== undefined) {
+        statGridSize.textContent = gridSize;
+    }
+    if (statScore && score !== undefined) {
+        statScore.textContent = score;
+    }
+    if (statMode && mode !== undefined) {
+        statMode.textContent = mode;
+    }
+}
+
+function normalizeGridDimension(rawValue, minValue, maxValue, fallbackValue) {
+    const parsed = parseInt(rawValue, 10);
+    const min = Number.isFinite(minValue) ? minValue : 1;
+    const max = Number.isFinite(maxValue) ? maxValue : 100;
+    const fallback = Number.isFinite(fallbackValue) ? fallbackValue : min;
+    const safe = Number.isFinite(parsed) ? parsed : fallback;
+    return Math.max(min, Math.min(max, safe));
 }
 
 // Update compactness display
@@ -220,8 +300,18 @@ function updateUIControls(params) {
     isUpdatingParameters = true;
 
     // Update rows and cols inputs
-    rowsInput.value = params.rows;
-    colsInput.value = params.cols;
+    const rowsMin = parseInt(rowsInput.min, 10) || 1;
+    const rowsMax = parseInt(rowsInput.max, 10) || 100;
+    const colsMin = parseInt(colsInput.min, 10) || 1;
+    const colsMax = parseInt(colsInput.max, 10) || 100;
+
+    const safeRows = normalizeGridDimension(params.rows, rowsMin, rowsMax, rowsMin);
+    const safeCols = normalizeGridDimension(params.cols, colsMin, colsMax, colsMin);
+
+    rowsInput.value = safeRows;
+    colsInput.value = safeCols;
+    if (rowsSlider) rowsSlider.value = safeRows;
+    if (colsSlider) colsSlider.value = safeCols;
 
     // Update compactness slider
     const compactnessValue = parseFloat(params.compactness.toFixed(2));
@@ -239,11 +329,24 @@ async function loadData(geojson, fileName = 'london.geojson') {
     // Fix winding order before processing
     const fixedGeoJson = fixGeoJsonWinding(geojson);
 
+    // Reset shared map transform when loading a new source dataset
+    currentSharedTransform = d3.zoomIdentity;
+
     const { processedData, bounds } = processGeoJson(fixedGeoJson, fileName);
 
     londonData = processedData;
     originalBounds = bounds;
     currentGeoJson = fixedGeoJson;
+    currentSourceFileName = fileName;
+
+    updateRunStats({
+        featureCount: processedData.length,
+        gridSize: '--',
+        score: '--',
+        mode: 'Auto'
+    });
+
+    setMapState('grid-map', 'Computing cartogram allocation...', 'info');
 
     // Auto-estimate parameters from GeoJSON (use fixed GeoJSON)
     try {
@@ -271,7 +374,16 @@ async function loadData(geojson, fileName = 'london.geojson') {
 // Load GLPK and initialize
 async function init() {
     try {
+        setMapState('original-map', 'Loading geographic source map...', 'info');
+        setMapState('grid-map', 'Cartogram will appear after allocation.', 'muted');
+
         statusText.textContent = 'Loading GLPK solver...';
+        updateRunStats({
+            featureCount: '--',
+            gridSize: '--',
+            score: '--',
+            mode: 'Initializing'
+        });
         glpkInstance = await glpk();
 
         // Wait for DOM to be fully laid out, then recalculate map dimensions
@@ -297,6 +409,8 @@ async function init() {
 
     } catch (error) {
         showError('Failed to initialize: ' + error.message);
+        setMapState('original-map', 'Failed to load source map.', 'error');
+        setMapState('grid-map', 'Initialization failed. Check inputs and reload.', 'error');
         console.error(error);
     }
 }
@@ -306,10 +420,50 @@ function setupEventListeners() {
         compactnessSlider,
         gridTypeSelect,
         distanceMetricSelect,
-        rowsInput,
-        colsInput,
         rotatePCAInput
     ];
+
+    let allocationTimeout = null;
+    const scheduleAllocation = (delayMs = 200) => {
+        clearTimeout(allocationTimeout);
+        allocationTimeout = setTimeout(() => {
+            allocateAndDraw();
+        }, delayMs);
+    };
+
+    const bindDimensionControls = (numberInput, sliderInput) => {
+        const minValue = parseInt(numberInput.min, 10) || 1;
+        const maxValue = parseInt(numberInput.max, 10) || 100;
+
+        const syncAndUpdate = (sourceInput, commitImmediately = false) => {
+            if (isUpdatingParameters) return;
+
+            const otherInput = sourceInput === numberInput ? sliderInput : numberInput;
+            const fallbackValue = parseInt(otherInput.value, 10) || minValue;
+            const safeValue = normalizeGridDimension(sourceInput.value, minValue, maxValue, fallbackValue);
+
+            numberInput.value = safeValue;
+            sliderInput.value = safeValue;
+
+            if (commitImmediately) {
+                allocateAndDraw();
+            } else {
+                scheduleAllocation(180);
+            }
+        };
+
+        numberInput.addEventListener('input', () => syncAndUpdate(numberInput, false));
+        numberInput.addEventListener('change', () => syncAndUpdate(numberInput, true));
+        sliderInput.addEventListener('input', () => syncAndUpdate(sliderInput, false));
+        sliderInput.addEventListener('change', () => syncAndUpdate(sliderInput, true));
+    };
+
+    if (rowsSlider) {
+        bindDimensionControls(rowsInput, rowsSlider);
+    }
+    if (colsSlider) {
+        bindDimensionControls(colsInput, colsSlider);
+    }
 
     inputs.forEach(input => {
         input.addEventListener('change', () => {
@@ -322,15 +476,11 @@ function setupEventListeners() {
             // Skip if we're updating parameters programmatically
             if (isUpdatingParameters) return;
 
-            if (input.type === 'range') {
+            if (input === compactnessSlider) {
                 compactnessValue.textContent = compactnessSlider.value;
             }
-            // Debounce for number inputs
-            if (input.type === 'number') {
-                clearTimeout(input._timeout);
-                input._timeout = setTimeout(() => {
-                    allocateAndDraw();
-                }, 500);
+            if (input === compactnessSlider) {
+                scheduleAllocation(120);
             }
         });
     });
@@ -342,6 +492,7 @@ function setupEventListeners() {
 
         try {
             statusText.textContent = `Loading ${file.name}...`;
+            updateRunStats({ mode: 'Loading' });
             errorContainer.innerHTML = '';
 
             const text = await file.text();
@@ -363,6 +514,9 @@ function setupEventListeners() {
             showError('Failed to load file: ' + error.message);
             console.error(error);
             statusText.textContent = 'Error loading file';
+            updateRunStats({ mode: 'Error' });
+            setMapState('original-map', 'Unable to render uploaded source map.', 'error');
+            setMapState('grid-map', 'Upload failed. Please provide valid GeoJSON.', 'error');
             fileUpload.value = ''; // Reset file input
         }
     });
@@ -371,6 +525,7 @@ function setupEventListeners() {
     resetButton.addEventListener('click', async () => {
         try {
             statusText.textContent = 'Loading default data...';
+            updateRunStats({ mode: 'Resetting' });
             errorContainer.innerHTML = '';
 
             const response = await fetch('london.geojson');
@@ -386,6 +541,7 @@ function setupEventListeners() {
 
         } catch (error) {
             showError('Failed to reset: ' + error.message);
+            updateRunStats({ mode: 'Error' });
             console.error(error);
         }
     });
@@ -394,6 +550,7 @@ function setupEventListeners() {
     editModeCheckbox.addEventListener('change', (e) => {
         editModeEnabled = !!e.target.checked;
         statusText.textContent = editModeEnabled ? 'Edit mode enabled' : 'Edit mode disabled';
+        updateRunStats({ mode: editModeEnabled ? 'Manual Edit' : 'Auto' });
         // Redraw grid so interactive handlers are attached/detached
         if (currentResult) {
             drawGridCartogram(currentResult, currentGridType);
@@ -407,6 +564,7 @@ function setupEventListeners() {
         hasEdits = false;
         resetEditsButton.disabled = true;
         statusText.textContent = 'Edits reset to original allocation';
+        updateRunStats({ mode: 'Auto' });
         drawGridCartogram(currentResult, currentGridType);
     });
 }
@@ -414,6 +572,8 @@ function setupEventListeners() {
 async function allocateAndDraw() {
     try {
         statusText.textContent = 'Computing allocation...';
+        updateRunStats({ mode: hasEdits ? 'Manual Edit' : 'Computing' });
+        setMapState('grid-map', 'Computing cartogram allocation...', 'info');
         errorContainer.innerHTML = '';
 
         const mapper = new GridMapper();
@@ -449,12 +609,21 @@ async function allocateAndDraw() {
         // Enable export button
         exportButton.disabled = false;
 
+        updateRunStats({
+            featureCount: result.assignments.length,
+            gridSize: `${result.meta.cols} x ${result.meta.rows}`,
+            score: result.meta.score.toFixed(2),
+            mode: hasEdits ? 'Manual Edit' : 'Auto'
+        });
+
         statusText.textContent = `Allocated ${result.assignments.length} boroughs to ${result.meta.cols}x${result.meta.rows} grid. Score: ${result.meta.score.toFixed(2)}`;
 
     } catch (error) {
         showError('Allocation failed: ' + error.message);
         console.error(error);
         statusText.textContent = 'Error: ' + error.message;
+        updateRunStats({ mode: 'Error' });
+        setMapState('grid-map', 'Allocation failed. Try different grid settings.', 'error');
     }
 }
 
@@ -589,6 +758,10 @@ function drawOriginalMap(geojson) {
         .scaleExtent([0.5, 10])
         .on('zoom', (event) => {
             g.attr('transform', event.transform);
+
+            if (!isSyncingMaps) {
+                syncMapTransforms('original', event.transform);
+            }
         });
 
     zoomControls.append('button')
@@ -614,6 +787,8 @@ function drawOriginalMap(geojson) {
         });
 
     svg.call(zoom);
+    originalMapSyncApi = { svg, zoom };
+    applySharedTransform(svg, zoom);
 }
 
 function drawGridCartogram(result, gridType = 'rect') {
@@ -666,6 +841,26 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
     const availableWidth = mapWidth - 2 * padding;
     const availableHeight = mapHeight - 2 * padding;
 
+    // Preserve geometry proportions based on grid layout (not lon/lat bounds)
+    // to avoid perceived horizontal/vertical stretching.
+    const hexYSpacing = 0.8660254037844386; // sqrt(3)/2
+    const safeCols = Math.max(1, cols);
+    const safeRows = Math.max(1, rows);
+    const targetAspect = gridType === 'hex'
+        ? ((safeCols - 1 + 1.5) / (Math.max(1e-9, (safeRows - 1) * hexYSpacing + 1)))
+        : (safeCols / safeRows);
+
+    let plotWidth = availableWidth;
+    let plotHeight = availableHeight;
+    if (plotWidth / plotHeight > targetAspect) {
+        plotWidth = plotHeight * targetAspect;
+    } else {
+        plotHeight = plotWidth / targetAspect;
+    }
+
+    const plotOffsetX = padding + (availableWidth - plotWidth) / 2;
+    const plotOffsetY = padding + (availableHeight - plotHeight) / 2;
+
     // Create color scale
     const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
 
@@ -676,11 +871,9 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
         // In grid units: horizontal spacing = 1, vertical spacing = sqrt(3)/2
         // With staggering, effective width = (cols - 1 + 0.5)
 
-        const hexYSpacing = 0.8660254037844386; // sqrt(3)/2
-
         // Calculate scale factors to fit in available space
-        const scaleX = availableWidth / (cols - 1 + 0.5);
-        const scaleY = availableHeight / ((rows - 1) * hexYSpacing);
+        const scaleX = plotWidth / Math.max(1e-9, (cols - 1 + 0.5));
+        const scaleY = plotHeight / Math.max(1e-9, (rows - 1) * hexYSpacing);
         const scale = Math.min(scaleX, scaleY);
 
         // Hexagon radius (width = 2*radius, so radius = scale/2)
@@ -689,8 +882,8 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
         // Calculate total space used and center
         const totalHexWidth = (cols - 1 + 0.5) * scale;
         const totalHexHeight = (rows - 1) * hexYSpacing * scale;
-        const offsetX = padding + (availableWidth - totalHexWidth) / 2;
-        const offsetY = padding + (availableHeight - totalHexHeight) / 2;
+        const offsetX = plotOffsetX + (plotWidth - totalHexWidth) / 2;
+        const offsetY = plotOffsetY + (plotHeight - totalHexHeight) / 2;
 
         // Function to generate flat-top hexagon path
         function hexagonPath(cx, cy, radius) {
@@ -811,6 +1004,7 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                     hasEdits = true;
                     resetEditsButton.disabled = false;
                     statusText.textContent = 'Edited: manual reposition applied';
+                    updateRunStats({ mode: 'Manual Edit' });
                     // redraw
                     drawGridCartogram(currentResult, currentGridType);
                 }
@@ -821,6 +1015,7 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                 if (e.key === 'Escape') {
                     cleanup();
                     statusText.textContent = 'Edit cancelled';
+                    updateRunStats({ mode: hasEdits ? 'Manual Edit' : 'Auto' });
                 }
             }
 
@@ -840,14 +1035,14 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
         }
     } else {
         // Rectangular grid
-        const cellWidth = availableWidth / cols;
-        const cellHeight = availableHeight / rows;
+        const cellWidth = plotWidth / cols;
+        const cellHeight = plotHeight / rows;
 
         // Draw grid cells
         assignments.forEach((assignment, i) => {
-            const x = padding + assignment.gridX * cellWidth;
+            const x = plotOffsetX + assignment.gridX * cellWidth;
             // Flip Y-axis: SVG Y increases downward, but normalization treats Y as increasing upward
-            const y = padding + (rows - 1 - assignment.gridY) * cellHeight;
+            const y = plotOffsetY + (rows - 1 - assignment.gridY) * cellHeight;
 
             const cell = g.append('rect')
                 .attr('class', 'grid-cell')
@@ -886,19 +1081,19 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
         // Draw grid lines
         for (let i = 0; i <= cols; i++) {
             g.append('line')
-                .attr('x1', padding + i * cellWidth)
-                .attr('y1', padding)
-                .attr('x2', padding + i * cellWidth)
-                .attr('y2', padding + rows * cellHeight)
+                .attr('x1', plotOffsetX + i * cellWidth)
+                .attr('y1', plotOffsetY)
+                .attr('x2', plotOffsetX + i * cellWidth)
+                .attr('y2', plotOffsetY + rows * cellHeight)
                 .attr('stroke', '#ddd')
                 .attr('stroke-width', 0.5);
         }
         for (let i = 0; i <= rows; i++) {
             g.append('line')
-                .attr('x1', padding)
-                .attr('y1', padding + i * cellHeight)
-                .attr('x2', padding + cols * cellWidth)
-                .attr('y2', padding + i * cellHeight)
+                .attr('x1', plotOffsetX)
+                .attr('y1', plotOffsetY + i * cellHeight)
+                .attr('x2', plotOffsetX + cols * cellWidth)
+                .attr('y2', plotOffsetY + i * cellHeight)
                 .attr('stroke', '#ddd')
                 .attr('stroke-width', 0.5);
         }
@@ -911,8 +1106,8 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
             svgNode.style.cursor = 'grabbing';
 
             // Create ghost rect at initial center
-            const initX = padding + assignment.gridX * cellWidth;
-            const initY = padding + (rows - 1 - assignment.gridY) * cellHeight;
+            const initX = plotOffsetX + assignment.gridX * cellWidth;
+            const initY = plotOffsetY + (rows - 1 - assignment.gridY) * cellHeight;
             ghostRect = g.append('rect').attr('class', 'ghost').attr('x', initX).attr('y', initY).attr('width', cellWidth).attr('height', cellHeight).attr('fill', '#ffffff');
 
             function onMove(e) {
@@ -922,8 +1117,8 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                 let target = null;
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
-                        const ccx = padding + c * cellWidth + cellWidth / 2;
-                        const ccy = padding + (rows - 1 - r) * cellHeight + cellHeight / 2;
+                        const ccx = plotOffsetX + c * cellWidth + cellWidth / 2;
+                        const ccy = plotOffsetY + (rows - 1 - r) * cellHeight + cellHeight / 2;
                         const d2 = (px - ccx) * (px - ccx) + (py - ccy) * (py - ccy);
                         if (d2 < minDist) {
                             minDist = d2;
@@ -955,6 +1150,7 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                     hasEdits = true;
                     resetEditsButton.disabled = false;
                     statusText.textContent = 'Edited: manual reposition applied';
+                    updateRunStats({ mode: 'Manual Edit' });
                     drawGridCartogram(currentResult, currentGridType);
                 }
                 cleanup();
@@ -964,6 +1160,7 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
                 if (e.key === 'Escape') {
                     cleanup();
                     statusText.textContent = 'Edit cancelled';
+                    updateRunStats({ mode: hasEdits ? 'Manual Edit' : 'Auto' });
                 }
             }
 
@@ -1015,9 +1212,15 @@ function setupGridCartogramZoom(svg, container, result, gridType) {
         .scaleExtent([0.5, 10])
         .on('zoom', (event) => {
             g.attr('transform', event.transform);
+
+            if (!isSyncingMaps) {
+                syncMapTransforms('grid', event.transform);
+            }
         });
 
     svg.call(zoom);
+    gridMapSyncApi = { svg, zoom };
+    applySharedTransform(svg, zoom);
 }
 
 function showTooltip(event, text) {
@@ -1049,6 +1252,32 @@ function exportGeoJSON() {
             currentResult.meta  // Automatically uses gridType from meta
         );
 
+        // Keep all original user-provided attributes in exported cartogram features.
+        const assignmentByCell = new Map(
+            currentResult.assignments.map(assignment => [`${assignment.gridX},${assignment.gridY}`, assignment])
+        );
+
+        gridGeoJson.features = gridGeoJson.features.map(feature => {
+            const key = `${feature.properties?.gridX},${feature.properties?.gridY}`;
+            const assignment = assignmentByCell.get(key);
+            if (!assignment) return feature;
+
+            const originalProperties = assignment.originalFeature?.properties || {};
+            const mergedProperties = {
+                ...originalProperties,
+                ...feature.properties,
+                name: assignment.name
+            };
+
+            const featureId = assignment.originalFeature?.id ?? assignment.id;
+
+            return {
+                ...feature,
+                ...(featureId !== undefined ? { id: featureId } : {}),
+                properties: mergedProperties
+            };
+        });
+
         // Convert to JSON string
         const jsonString = JSON.stringify(gridGeoJson, null, 2);
 
@@ -1057,16 +1286,18 @@ function exportGeoJSON() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `london-grid-cartogram-${currentGridType}${hasEdits ? '-edited' : ''}-${Date.now()}.geojson`;
+        a.download = getCartogramExportFileName(currentSourceFileName);
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
         statusText.textContent = `GeoJSON exported successfully!`;
+        updateRunStats({ mode: hasEdits ? 'Manual Edit' : 'Exported' });
         setTimeout(() => {
             if (currentResult) {
                 statusText.textContent = `Allocated ${currentResult.assignments.length} boroughs to ${currentResult.meta.cols}x${currentResult.meta.rows} grid. Score: ${currentResult.meta.score.toFixed(2)}`;
+                updateRunStats({ mode: hasEdits ? 'Manual Edit' : 'Auto' });
             }
         }, 2000);
     } catch (error) {

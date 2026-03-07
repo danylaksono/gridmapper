@@ -14,3 +14,24 @@ export { computePolygonCentroid } from './utils/polygon-centroid.js';
 export { createGridGeoJson, createPointsGeoJson, projectGeoJson } from './utils/geojson-utils.js';
 export { computeAdjacencyGraph } from './utils/adjacency-graph.js';
 export { embedGraph } from './utils/graph-embed.js';
+
+// Dorling/Demers Cartogram exports
+export { 
+    createDorlingCartogram, 
+    createDemersCartogram, 
+    DorlingCartogram 
+} from './cartogram/dorling-cartogram.js';
+export { 
+    runForceSimulation, 
+    applyPairwiseRepulsion,
+    applyPositionAnchor,
+    applyAdjacencyAttraction 
+} from './cartogram/force-simulation.js';
+export {
+    createCircleCoordinates,
+    createHexagonCoordinates,
+    createRectangleCoordinates,
+    createSquareCoordinates,
+    weightToRadius,
+    calculateScaleFactor
+} from './cartogram/shape-generator.js';
