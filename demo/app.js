@@ -646,7 +646,7 @@ async function allocateAndDraw() {
             mode: hasEdits ? 'Manual Edit' : 'Auto'
         });
 
-        statusText.textContent = `Allocated ${result.assignments.length} boroughs to ${result.meta.cols}x${result.meta.rows} grid. Score: ${result.meta.score.toFixed(2)}`;
+        statusText.textContent = `Allocated ${result.assignments.length} features to ${result.meta.cols}x${result.meta.rows} grid. Score: ${result.meta.score.toFixed(2)}`;
 
     } catch (error) {
         showError('Allocation failed: ' + error.message);

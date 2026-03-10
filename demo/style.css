@@ -327,6 +327,7 @@ body {
     flex-direction: column;
     gap: 6px;
     margin-bottom: 10px;
+    position: relative;
 }
 
 .control-group:last-child {
@@ -413,10 +414,58 @@ body {
     font-weight: 600;
 }
 
-.control-help {
+.control-group[data-help]::after {
+    content: attr(data-help);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    min-width: 180px;
+    max-width: 240px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(19, 44, 54, 0.22);
+    background: rgba(14, 30, 38, 0.96);
+    color: #f2f8fb;
     font-size: 11px;
     line-height: 1.4;
-    color: var(--muted);
+    text-align: left;
+    box-shadow: 0 8px 20px rgba(6, 20, 27, 0.28);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(2px);
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+    z-index: 6;
+}
+
+.control-group[data-help]::before {
+    content: "";
+    position: absolute;
+    right: 6px;
+    bottom: calc(100% + 2px);
+    width: 8px;
+    height: 8px;
+    background: rgba(14, 30, 38, 0.96);
+    border-left: 1px solid rgba(19, 44, 54, 0.22);
+    border-top: 1px solid rgba(19, 44, 54, 0.22);
+    transform: rotate(45deg);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease, visibility 0.16s ease;
+    z-index: 5;
+}
+
+.control-group[data-help]:hover::after,
+.control-group[data-help]:hover::before,
+.control-group[data-help]:focus-within::after,
+.control-group[data-help]:focus-within::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.control-help {
+    display: none;
 }
 
 .reset-button,

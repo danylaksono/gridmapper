@@ -1,19 +1,4 @@
 <!DOCTYPE html>
-<!--
-    GridMapper - London Boroughs Demo
-    
-    This example demonstrates the GridMapper API with London boroughs data.
-    It shows the original map and grid cartogram side-by-side, allowing users
-    to adjust configuration parameters and see instant updates.
-    
-     To run this example:
-     1. No build required — the example imports the local `src/index.js` (ES Module). Note: this will use local source files, so serve the repository root directory when running the example.
-     2. Serve this directory with a web server (required for ES modules and CORS):
-         - Python: python -m http.server 8000
-         - Node: npx http-server -p 8000
-         - Or use any other web server
-     3. Open http://localhost:8000/example/index.html in your browser
--->
 <html lang="en">
 
 <head>
@@ -37,7 +22,9 @@
         <header class="app-header panel-card">
             <div class="app-header-main">
                 <h1>GridMapper Cartogram Studio</h1>
-                <p class="subtitle">Upload GeoJSON, tune allocation, and export synchronized grid cartograms.</p>
+                <p class="subtitle">Geo-points to cartogram grid. Based on <a
+                        href="https://observablehq.com/@jwolondon/gridmap-allocation" target="_blank"
+                        rel="noopener noreferrer">gridmap-allocation</a> by Jo Wood</p>
             </div>
             <a class="header-badge" href="https://github.com/danylaksono/gridmapper" target="_blank"
                 rel="noopener noreferrer">
@@ -110,69 +97,63 @@
                     <div class="controls-grid">
                         <div class="control-section">
                             <div class="control-section-title">Grid Configuration</div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Pick the visual tiling strategy for each assigned region.">
                                 <label for="grid-type">Grid Type</label>
                                 <select id="grid-type">
                                     <option value="rect">Rectangular</option>
                                     <option value="hex">Hexagonal</option>
                                 </select>
-                                <p class="control-help">Pick the visual tiling strategy for each assigned region.</p>
                             </div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Higher rows increase vertical resolution but can reduce label room.">
                                 <label for="rows-slider">Grid Rows</label>
                                 <div class="dual-input">
                                     <input type="range" id="rows-slider" min="1" max="100" step="1" value="6">
                                     <input type="number" id="rows" min="1" max="100" value="6">
                                 </div>
-                                <p class="control-help">Higher rows increase vertical resolution but can reduce label
-                                    room.</p>
                             </div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Tune together with rows to avoid over-sparse or overcrowded grids.">
                                 <label for="cols-slider">Grid Columns</label>
                                 <div class="dual-input">
                                     <input type="range" id="cols-slider" min="1" max="100" step="1" value="6">
                                     <input type="number" id="cols" min="1" max="100" value="6">
                                 </div>
-                                <p class="control-help">Tune together with rows to avoid over-sparse or overcrowded
-                                    grids.</p>
                             </div>
                         </div>
 
                         <div class="control-section">
                             <div class="control-section-title">Allocation Settings</div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Lower keeps relative geography, higher tightens clusters toward center.">
                                 <label for="compactness">Compactness</label>
                                 <input type="range" id="compactness" min="0" max="1" step="0.05" value="0.5">
                                 <span class="value-display" id="compactness-value">0.5</span>
-                                <p class="control-help">Lower keeps relative geography, higher tightens clusters toward
-                                    center.</p>
                             </div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Manhattan can produce more orthogonal placements on rectangular grids.">
                                 <label for="distance-metric">Distance Metric</label>
                                 <select id="distance-metric">
                                     <option value="euclidean">Euclidean</option>
                                     <option value="manhattan">Manhattan</option>
                                 </select>
-                                <p class="control-help">Manhattan can produce more orthogonal placements on rectangular
-                                    grids.</p>
                             </div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Auto-rotates input orientation to better align long geographic footprints.">
                                 <label for="rotate-pca">
                                     <input type="checkbox" id="rotate-pca"> Rotate by PCA
                                 </label>
-                                <p class="control-help">Auto-rotates input orientation to better align long geographic
-                                    footprints.</p>
                             </div>
                         </div>
 
                         <div class="control-section">
                             <div class="control-section-title">Edit Mode</div>
-                            <div class="control-group">
+                            <div class="control-group"
+                                data-help="Drag cells in the cartogram map for manual refinement after solve.">
                                 <label for="edit-mode">
                                     <input type="checkbox" id="edit-mode"> Enable visual edit mode
                                 </label>
-                                <p class="control-help">Drag cells in the cartogram map for manual refinement after
-                                    solve.</p>
                             </div>
                             <div class="control-group">
                                 <button id="reset-edits" class="reset-button" disabled>Reset Edits</button>
