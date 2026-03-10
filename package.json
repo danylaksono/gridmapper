@@ -1,6 +1,6 @@
 {
   "name": "gridmapper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A JavaScript library for allocating geographic points to a grid using Mixed Integer Programming (MIP). Inspired by Jo Wood's Grid Map Allocation.",
   "main": "dist/gridmapper.cjs.js",
   "module": "dist/gridmapper.esm.js",
