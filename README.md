@@ -10,7 +10,21 @@ see the [demo](https://danylaksono.is-a.dev/gridmapper/demo/) for the interactiv
 
 ## Inspiration
 
-This library is inspired by and builds upon the work of **Jo Wood's Grid Map Allocation** library ([@gridmap_allocation](https://observablehq.com/@jwolondon/gridmap-allocation)). The original implementation demonstrated the concept of using linear programming to allocate geographic points to grid cells. This library extends that work with small additional features and optimisations.
+This library is inspired by and builds upon the work of **Jo Wood's Grid Map Allocation** library ([@gridmap_allocation](https://observablehq.com/@jwolondon/gridmap-allocation)).
+
+The core idea inherited from the original work is the MIP-based assignment of geographic points to grid cells using a compactness-controlled objective.
+
+This implementation contributes small bits of improvements in the form of a production-ready toolkit and expanded methods:
+
+- A packaged, reusable library architecture (ESM/CJS/UMD builds) instead of a notebook-only implementation, so the method can be integrated into browser apps, Node pipelines, and published packages.
+- A compatibility-first API (`allocateSimple`) plus an advanced API (`allocate`) with richer controls, so users can start with the original mental model and then opt into deeper tuning when needed.
+- Automatic parameter estimation from input GeoJSON (grid dimensions, compactness, and PCA-rotation recommendation), reducing manual trial-and-error and improving defaults on unfamiliar geographies.
+- Multiple grid geometries (rectangular and hexagonal) and selectable distance metrics (Euclidean/Manhattan), allowing layouts to better match cartographic style and data characteristics.
+- Optional topology-aware enhancements, including adjacency penalties, graph-embedding targets, and sparse pairwise adjacency terms, to better preserve neighborhood structure and reduce visually jarring breaks in contiguous regions.
+- Optional post-processing refinement (greedy swaps, simulated annealing, and cut-edge reduction heuristics), to improve layout quality after MIP solving without requiring expensive exact contiguity constraints.
+- GeoJSON-focused I/O utilities and an interactive demo workflow (upload, compare, manual edit, export), making the library easier to validate, iterate, and deploy in real mapping workflows.
+
+In short, the original notebook introduced the allocation concept; this project extends it into a broader, configurable cartogram library with additional optimisation strategies and practical workflows.
 
 ## Features
 
@@ -20,7 +34,7 @@ This library is inspired by and builds upon the work of **Jo Wood's Grid Map All
   - Principal Component Analysis (PCA) rotation for better alignment
   - Support for hexagonal and rectangular grids
   - Adjacency constraints for compact clustering
-  - Post-processing optimization with simulated annealing
+  - Post-processing optimisation with simulated annealing
 - **Flexible MIP Solver**: Works with any MIP solver that implements the required interface (GLPK.js included)
 
 ## Installation
