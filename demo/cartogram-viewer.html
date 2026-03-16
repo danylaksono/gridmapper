@@ -4,301 +4,825 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dorling Cartogram Viewer</title>
+    <title>Cartogram Viewer</title>
     <style>
+        :root {
+            --bg-a: #edf3f5;
+            --bg-b: #f9fbfc;
+            --panel: #ffffff;
+            --ink: #1c2f38;
+            --muted: #5f7480;
+            --line: #d0dde3;
+            --accent: #0f7f71;
+            --accent-ink: #0b6358;
+            --danger: #9b3f2f;
+            --danger-bg: #fff0ec;
+            --radius: 12px;
+            --shadow: 0 14px 30px rgba(10, 35, 44, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
-            padding: 20px;
-            background: #f5f5f5;
+            font-family: Manrope, "IBM Plex Sans", "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 0% 0%, rgba(15, 127, 113, 0.12), rgba(15, 127, 113, 0) 35%),
+                radial-gradient(circle at 100% 0%, rgba(236, 142, 96, 0.11), rgba(236, 142, 96, 0) 38%),
+                linear-gradient(140deg, var(--bg-a), var(--bg-b));
+            min-height: 100vh;
+            padding: 14px;
         }
 
-        h1 {
-            color: #333;
-            margin-bottom: 20px;
+        .app {
+            max-width: 1480px;
+            margin: 0 auto;
+            display: grid;
+            gap: 10px;
         }
 
-        .container {
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .header {
+            padding: 12px 14px;
             display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
             flex-wrap: wrap;
-            gap: 20px;
         }
 
-        .card {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            padding: 15px;
-            flex: 1;
-            min-width: 400px;
+        .title {
+            margin: 0;
+            font-size: 21px;
+            letter-spacing: -0.01em;
         }
 
-        .card h2 {
-            margin: 0 0 15px 0;
-            color: #555;
-            font-size: 16px;
+        .subtitle {
+            margin: 4px 0 0 0;
+            color: var(--muted);
+            font-size: 13px;
         }
 
-        svg {
+        .toolbar {
+            padding: 10px 14px;
+            display: flex;
+            align-items: end;
+            gap: 10px;
+            flex-wrap: wrap;
+            border-top: 1px solid var(--line);
+        }
+
+        .control {
+            display: grid;
+            gap: 5px;
+            min-width: 190px;
+        }
+
+        .control label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+            color: var(--muted);
+        }
+
+        .control select,
+        .control input[type="range"] {
             width: 100%;
-            height: 400px;
-            background: #fafafa;
-            border-radius: 4px;
         }
 
-        .controls {
-            margin-bottom: 20px;
+        select,
+        button,
+        input[type="range"] {
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--ink);
+            font: inherit;
+            font-size: 13px;
         }
 
         select,
         button {
-            padding: 8px 16px;
-            font-size: 14px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            margin-right: 10px;
+            padding: 8px 10px;
         }
 
         button {
-            background: #4a90d9;
-            color: white;
-            border: none;
             cursor: pointer;
+            font-weight: 700;
+            background: #f4f8f9;
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
         }
 
         button:hover {
-            background: #3a7bc8;
+            border-color: #95adb7;
+        }
+
+        button.primary:hover {
+            background: var(--accent-ink);
+            border-color: var(--accent-ink);
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .status {
+            padding: 8px 14px;
+            font-size: 12px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            background: #f7fbfc;
+        }
+
+        .status.error {
+            color: var(--danger);
+            background: var(--danger-bg);
+            border-top-color: #efc1b4;
+        }
+
+        .body {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 10px;
+        }
+
+        .maps {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            min-height: 0;
+        }
+
+        .map-card {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fbfdfe;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .map-card h2 {
+            margin: 0;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 800;
+            padding: 10px;
+            border-bottom: 1px solid var(--line);
+            background: #f3f9f8;
+        }
+
+        .svg-wrap {
+            position: relative;
+            min-height: 460px;
+            background: linear-gradient(165deg, #f7fcfa 0%, #f4f8fc 100%);
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 13px;
+            background: rgba(250, 252, 253, 0.92);
+        }
+
+        .side {
+            padding: 10px;
+            display: grid;
+            align-content: start;
+            gap: 10px;
+        }
+
+        .metric-panel {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #fbfdfd;
+            overflow: hidden;
+        }
+
+        .metric-panel h3 {
+            margin: 0;
+            padding: 10px;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .metric {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            padding: 8px;
+        }
+
+        .metric .k {
+            display: block;
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            font-weight: 700;
+        }
+
+        .metric .v {
+            display: block;
+            margin-top: 2px;
+            font-weight: 800;
+            font-size: 13px;
         }
 
         .legend {
+            padding: 10px;
             font-size: 12px;
-            color: #666;
-            margin-top: 10px;
+            color: var(--muted);
+        }
+
+        .feat {
+            transition: opacity 0.12s, stroke-width 0.12s;
+        }
+
+        .feat.dim {
+            opacity: 0.2;
+        }
+
+        .feat.active {
+            stroke: #0f2530;
+            stroke-width: 1.6;
+            opacity: 1;
+        }
+
+        .tooltip {
+            position: fixed;
+            pointer-events: none;
+            background: rgba(15, 26, 36, 0.92);
+            color: #f2fbff;
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-size: 12px;
+            opacity: 0;
+            transform: translate(10px, -10px);
+            transition: opacity 0.1s;
+            z-index: 20;
+        }
+
+        .row-inline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .row-inline input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+        }
+
+        @media (max-width: 1180px) {
+            .body {
+                grid-template-columns: 1fr;
+            }
+
+            .maps {
+                grid-template-columns: 1fr;
+            }
+
+            .svg-wrap {
+                min-height: 380px;
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>Dorling Cartogram Visualization</h1>
+    <div class="app">
+        <section class="panel">
+            <div class="header">
+                <div>
+                    <h1 class="title">Cartogram Viewer</h1>
+                    <p class="subtitle">Operational preview for Dorling, Hexagon, and Demers outputs</p>
+                </div>
+            </div>
+            <div class="toolbar">
+                <div class="control">
+                    <label for="dataSelect">Cartogram Dataset</label>
+                    <select id="dataSelect">
+                        <option value="dorling-output.json">Circles (Dorling)</option>
+                        <option value="hexagon-output.json">Hexagons</option>
+                        <option value="demers-output.json">Squares (Demers)</option>
+                    </select>
+                </div>
+                <div class="control">
+                    <label for="opacitySlider">Fill Opacity</label>
+                    <input type="range" id="opacitySlider" min="0.2" max="1" step="0.05" value="0.75">
+                </div>
+                <div class="toolbar-actions">
+                    <button id="loadBtn" class="primary">Load</button>
+                    <button id="fitBtn">Refit View</button>
+                    <button id="exportSvgBtn">Download SVG</button>
+                    <button id="exportJsonBtn">Download JSON</button>
+                </div>
+                <label class="row-inline" for="showOriginalLabels">
+                    <input type="checkbox" id="showOriginalLabels"> Show Original Labels
+                </label>
+                <label class="row-inline" for="showCartLabels">
+                    <input type="checkbox" id="showCartLabels" checked> Show Cartogram Labels
+                </label>
+            </div>
+            <div id="status" class="status">Ready.</div>
+        </section>
 
-    <div class="controls">
-        <select id="dataSelect">
-            <option value="dorling-output.json">Circles (Dorling)</option>
-            <option value="hexagon-output.json">Hexagons</option>
-            <option value="demers-output.json">Squares (Demers)</option>
-        </select>
-        <button onclick="loadData()">Load</button>
+        <section class="body">
+            <section class="panel maps">
+                <article class="map-card">
+                    <h2>Original Geography</h2>
+                    <div class="svg-wrap">
+                        <svg id="originalSvg" viewBox="0 0 800 580"></svg>
+                        <div id="loadingOverlay" class="loading-overlay" hidden>Loading cartogram data...</div>
+                    </div>
+                </article>
+                <article class="map-card">
+                    <h2>Cartogram Result</h2>
+                    <div class="svg-wrap">
+                        <svg id="cartogramSvg" viewBox="0 0 800 580"></svg>
+                    </div>
+                </article>
+            </section>
+
+            <aside class="panel side">
+                <div class="metric-panel">
+                    <h3>Run Metadata</h3>
+                    <div class="metric-grid" id="metricGrid"></div>
+                </div>
+                <div class="metric-panel">
+                    <h3>Legend</h3>
+                    <div class="legend">
+                        Colors are stable per feature name.<br>
+                        Hover any feature to highlight on both maps.<br>
+                        Use Refit View after resizing window.
+                    </div>
+                </div>
+            </aside>
+        </section>
     </div>
 
-    <div class="container">
-        <div class="card">
-            <h2>Original Positions (London Boroughs)</h2>
-            <svg id="originalSvg"></svg>
-            <div class="legend">Circle size = population</div>
-        </div>
-        <div class="card">
-            <h2>Cartogram Result</h2>
-            <svg id="cartogramSvg"></svg>
-            <div class="legend" id="metadata"></div>
-        </div>
-    </div>
+    <div id="tooltip" class="tooltip"></div>
 
     <script>
-        // Color scale based on borough name hash
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+        const originalSvg = document.getElementById('originalSvg');
+        const cartogramSvg = document.getElementById('cartogramSvg');
+        const statusEl = document.getElementById('status');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const metricGrid = document.getElementById('metricGrid');
+        const dataSelect = document.getElementById('dataSelect');
+        const opacitySlider = document.getElementById('opacitySlider');
+        const showOriginalLabels = document.getElementById('showOriginalLabels');
+        const showCartLabels = document.getElementById('showCartLabels');
+        const tooltip = document.getElementById('tooltip');
+
+        let currentCartogram = null;
+        let currentOriginal = null;
+        let currentTransforms = null;
+
+        function setStatus(message, isError = false) {
+            statusEl.textContent = message;
+            statusEl.classList.toggle('error', Boolean(isError));
+        }
+
+        function setLoading(loading, message = 'Loading cartogram data...') {
+            loadingOverlay.hidden = !loading;
+            loadingOverlay.textContent = message;
+        }
+
         function hashColor(str) {
+            const text = String(str || 'feature');
             let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            for (let i = 0; i < text.length; i++) {
+                hash = text.charCodeAt(i) + ((hash << 5) - hash);
             }
             const h = Math.abs(hash) % 360;
-            return `hsl(${h}, 60%, 50%)`;
+            return `hsl(${h}, 62%, 47%)`;
         }
 
-        async function loadData() {
-            const filename = document.getElementById('dataSelect').value;
+        function isPolygonGeometry(geometry) {
+            return geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon');
+        }
 
-            try {
-                // Load cartogram result
-                const response = await fetch(filename);
-                const geojson = await response.json();
+        function flattenPolygonCoordinates(geometry) {
+            if (!geometry) return [];
+            if (geometry.type === 'Polygon') return geometry.coordinates.flat(1);
+            if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
+            return [];
+        }
 
-                // Also load original london data
-                const origResponse = await fetch('london.geojson');
-                const originalData = await origResponse.json();
+        function featureKey(feature, index) {
+            if (feature.id !== undefined && feature.id !== null) return String(feature.id);
+            const n = feature.properties?.LAD13NM || feature.properties?.name || feature.properties?.NAME;
+            if (n) return String(n);
+            return `feature_${index}`;
+        }
 
-                renderOriginal(originalData, geojson);
-                renderCartogram(geojson);
+        function polygonCentroid(coords) {
+            let x = 0;
+            let y = 0;
+            let area = 0;
 
-                // Show metadata
-                const meta = geojson.metadata || {};
-                document.getElementById('metadata').innerHTML =
-                    `Shape: ${meta.shapeType} | Features: ${meta.featureCount} | ` +
-                    `Overlaps: ${meta.hasOverlaps ? 'Yes' : 'No'} | k=${meta.k}`;
-
-            } catch (e) {
-                alert('Error loading data: ' + e.message);
+            for (let i = 0; i < coords.length - 1; i++) {
+                const x0 = coords[i][0];
+                const y0 = coords[i][1];
+                const x1 = coords[i + 1][0];
+                const y1 = coords[i + 1][1];
+                const a = x0 * y1 - x1 * y0;
+                area += a;
+                x += (x0 + x1) * a;
+                y += (y0 + y1) * a;
             }
-        }
 
-        function renderOriginal(originalData, cartogramData) {
-            const svg = document.getElementById('originalSvg');
-            svg.innerHTML = '';
+            area *= 0.5;
+            if (Math.abs(area) < 1e-12) {
+                const n = coords.length || 1;
+                const sx = coords.reduce((s, p) => s + p[0], 0);
+                const sy = coords.reduce((s, p) => s + p[1], 0);
+                return [sx / n, sy / n];
+            }
 
-            // Get bounds from cartogram metadata
-            const bounds = cartogramData.metadata?.bounds || getBounds(originalData);
-            const { transform } = getTransform(bounds, svg);
-
-            // Draw centroids as circles scaled by population
-            const features = originalData.features.map((f, i) => {
-                // Get centroid (approximate from first coordinate of first polygon)
-                const geom = f.geometry;
-                let coords;
-                if (geom.type === 'MultiPolygon') {
-                    coords = geom.coordinates[0][0];
-                } else if (geom.type === 'Polygon') {
-                    coords = geom.coordinates[0];
-                }
-
-                // Calculate centroid
-                let cx = 0, cy = 0;
-                for (const [x, y] of coords) {
-                    cx += x; cy += y;
-                }
-                cx /= coords.length;
-                cy /= coords.length;
-
-                // Get corresponding cartogram feature for radius
-                const cartFeature = cartogramData.features[i];
-                const cartCoords = cartFeature?.geometry?.coordinates?.[0];
-                let r = 10;
-                if (cartCoords) {
-                    // Calculate radius from cartogram circle
-                    let ccx = 0, ccy = 0;
-                    for (const [x, y] of cartCoords) {
-                        ccx += x; ccy += y;
-                    }
-                    ccx /= cartCoords.length;
-                    ccy /= cartCoords.length;
-                    r = Math.sqrt(Math.pow(cartCoords[0][0] - ccx, 2) +
-                        Math.pow(cartCoords[0][1] - ccy, 2));
-                }
-
-                return { cx, cy, r, name: f.properties.LAD13NM || `Feature ${i}` };
-            });
-
-            // Draw circles
-            features.forEach(f => {
-                const [x, y] = transform([f.cx, f.cy]);
-                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('cx', x);
-                circle.setAttribute('cy', y);
-                circle.setAttribute('r', f.r * (svg.clientWidth / (bounds.maxX - bounds.minX)));
-                circle.setAttribute('fill', hashColor(f.name));
-                circle.setAttribute('fill-opacity', '0.7');
-                circle.setAttribute('stroke', '#333');
-                circle.setAttribute('stroke-width', '0.5');
-
-                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                title.textContent = f.name;
-                circle.appendChild(title);
-
-                svg.appendChild(circle);
-            });
-        }
-
-        function renderCartogram(geojson) {
-            const svg = document.getElementById('cartogramSvg');
-            svg.innerHTML = '';
-
-            const bounds = getBoundsFromFeatures(geojson.features);
-            const { transform } = getTransform(bounds, svg);
-
-            // Draw each feature
-            geojson.features.forEach((feature, i) => {
-                const coords = feature.geometry.coordinates[0];
-                const name = feature.properties.LAD13NM || `Feature ${i}`;
-
-                // Convert to SVG path
-                const points = coords.map(([x, y]) => transform([x, y]).join(',')).join(' ');
-
-                const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                polygon.setAttribute('points', points);
-                polygon.setAttribute('fill', hashColor(name));
-                polygon.setAttribute('fill-opacity', '0.7');
-                polygon.setAttribute('stroke', '#333');
-                polygon.setAttribute('stroke-width', '0.5');
-
-                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                title.textContent = name;
-                polygon.appendChild(title);
-
-                svg.appendChild(polygon);
-            });
-        }
-
-        function getBounds(geojson) {
-            let minX = Infinity, maxX = -Infinity;
-            let minY = Infinity, maxY = -Infinity;
-
-            geojson.features.forEach(f => {
-                const coords = f.geometry.type === 'MultiPolygon'
-                    ? f.geometry.coordinates[0][0]
-                    : f.geometry.coordinates[0];
-
-                coords.forEach(([x, y]) => {
-                    minX = Math.min(minX, x);
-                    maxX = Math.max(maxX, x);
-                    minY = Math.min(minY, y);
-                    maxY = Math.max(maxY, y);
-                });
-            });
-
-            return { minX, maxX, minY, maxY };
+            return [x / (6 * area), y / (6 * area)];
         }
 
         function getBoundsFromFeatures(features) {
-            let minX = Infinity, maxX = -Infinity;
-            let minY = Infinity, maxY = -Infinity;
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
 
-            features.forEach(f => {
-                const coords = f.geometry.coordinates[0];
+            features.forEach((f) => {
+                const coords = flattenPolygonCoordinates(f.geometry);
                 coords.forEach(([x, y]) => {
-                    minX = Math.min(minX, x);
-                    maxX = Math.max(maxX, x);
-                    minY = Math.min(minY, y);
-                    maxY = Math.max(maxY, y);
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
                 });
             });
+
+            if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+                return { minX: 0, maxX: 1, minY: 0, maxY: 1 };
+            }
 
             return { minX, maxX, minY, maxY };
         }
 
-        function getTransform(bounds, svg) {
-            const width = svg.clientWidth || 400;
-            const height = svg.clientHeight || 400;
-            const padding = 20;
-
-            const dataWidth = bounds.maxX - bounds.minX;
-            const dataHeight = bounds.maxY - bounds.minY;
-
-            const scale = Math.min(
-                (width - 2 * padding) / dataWidth,
-                (height - 2 * padding) / dataHeight
-            );
-
+        function buildTransform(bounds, svg, padding = 26) {
+            const width = svg.clientWidth || 800;
+            const height = svg.clientHeight || 580;
+            const dataWidth = Math.max(1e-9, bounds.maxX - bounds.minX);
+            const dataHeight = Math.max(1e-9, bounds.maxY - bounds.minY);
+            const scale = Math.min((width - 2 * padding) / dataWidth, (height - 2 * padding) / dataHeight);
             const offsetX = (width - dataWidth * scale) / 2;
             const offsetY = (height - dataHeight * scale) / 2;
 
             return {
-                transform: ([x, y]) => [
+                scale,
+                map: ([x, y]) => [
                     (x - bounds.minX) * scale + offsetX,
-                    (bounds.maxY - y) * scale + offsetY  // Flip Y for SVG
-                ],
-                scale
+                    (bounds.maxY - y) * scale + offsetY
+                ]
             };
         }
 
-        // Load on page load
+        function createSvgNode(tag, attrs = {}) {
+            const n = document.createElementNS(SVG_NS, tag);
+            Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+            return n;
+        }
+
+        function withOpacity(c, a) {
+            return c.replace('hsl(', 'hsla(').replace(')', `, ${a})`);
+        }
+
+        function clearSvg(svg) {
+            while (svg.firstChild) svg.removeChild(svg.firstChild);
+        }
+
+        function setTooltip(text, event) {
+            tooltip.textContent = text;
+            tooltip.style.left = `${event.clientX + 12}px`;
+            tooltip.style.top = `${event.clientY - 8}px`;
+            tooltip.style.opacity = '1';
+        }
+
+        function hideTooltip() {
+            tooltip.style.opacity = '0';
+        }
+
+        function toggleLinkedHighlight(key) {
+            const all = document.querySelectorAll('.feat');
+            all.forEach((el) => {
+                const k = el.getAttribute('data-key');
+                if (key === null) {
+                    el.classList.remove('active');
+                    el.classList.remove('dim');
+                } else if (k === key) {
+                    el.classList.add('active');
+                    el.classList.remove('dim');
+                } else {
+                    el.classList.remove('active');
+                    el.classList.add('dim');
+                }
+            });
+        }
+
+        function getName(feature, i) {
+            return feature.properties?.LAD13NM ||
+                feature.properties?.name ||
+                feature.properties?.NAME ||
+                `Feature ${i + 1}`;
+        }
+
+        function renderOriginal(original, cartogram, transform) {
+            clearSvg(originalSvg);
+            const group = createSvgNode('g');
+            originalSvg.appendChild(group);
+
+            const opacity = Number(opacitySlider.value);
+            const cartByKey = new Map(cartogram.features.map((f, i) => [featureKey(f, i), f]));
+
+            original.features.forEach((feature, i) => {
+                if (!isPolygonGeometry(feature.geometry)) return;
+                const key = featureKey(feature, i);
+                const name = getName(feature, i);
+                const coords = flattenPolygonCoordinates(feature.geometry);
+                if (!coords.length) return;
+                const [cx, cy] = polygonCentroid(coords);
+                const [sx, sy] = transform.map([cx, cy]);
+
+                const cartFeature = cartByKey.get(key) || cartogram.features[i];
+                let radius = 6;
+                const cMeta = cartFeature?.properties?._cartogram;
+                if (cMeta && Number.isFinite(cMeta.radius)) {
+                    radius = cMeta.radius * transform.scale;
+                }
+
+                const color = hashColor(name);
+                const circle = createSvgNode('circle', {
+                    cx: sx,
+                    cy: sy,
+                    r: Math.max(2.5, radius),
+                    fill: withOpacity(color, opacity),
+                    stroke: '#1d2e35',
+                    'stroke-width': '0.6',
+                    class: 'feat',
+                    'data-key': key
+                });
+
+                circle.addEventListener('mouseenter', (event) => {
+                    toggleLinkedHighlight(key);
+                    setTooltip(name, event);
+                });
+                circle.addEventListener('mousemove', (event) => setTooltip(name, event));
+                circle.addEventListener('mouseleave', () => {
+                    toggleLinkedHighlight(null);
+                    hideTooltip();
+                });
+
+                group.appendChild(circle);
+
+                if (showOriginalLabels.checked) {
+                    const label = createSvgNode('text', {
+                        x: sx,
+                        y: sy - Math.max(5, radius + 2),
+                        'text-anchor': 'middle',
+                        'font-size': '10',
+                        fill: '#20343d'
+                    });
+                    label.textContent = name;
+                    group.appendChild(label);
+                }
+            });
+        }
+
+        function renderCartogram(cartogram, transform) {
+            clearSvg(cartogramSvg);
+            const group = createSvgNode('g');
+            cartogramSvg.appendChild(group);
+
+            const opacity = Number(opacitySlider.value);
+
+            cartogram.features.forEach((feature, i) => {
+                const ring = feature.geometry?.coordinates?.[0];
+                if (!Array.isArray(ring) || !ring.length) return;
+
+                const key = featureKey(feature, i);
+                const name = getName(feature, i);
+                const color = hashColor(name);
+                const points = ring.map((pt) => transform.map(pt).join(',')).join(' ');
+
+                const polygon = createSvgNode('polygon', {
+                    points,
+                    fill: withOpacity(color, opacity),
+                    stroke: '#1d2e35',
+                    'stroke-width': '0.6',
+                    class: 'feat',
+                    'data-key': key
+                });
+
+                polygon.addEventListener('mouseenter', (event) => {
+                    toggleLinkedHighlight(key);
+                    setTooltip(name, event);
+                });
+                polygon.addEventListener('mousemove', (event) => setTooltip(name, event));
+                polygon.addEventListener('mouseleave', () => {
+                    toggleLinkedHighlight(null);
+                    hideTooltip();
+                });
+
+                group.appendChild(polygon);
+
+                if (showCartLabels.checked) {
+                    const cMeta = feature.properties?._cartogram;
+                    let labelPos = null;
+                    if (cMeta && Number.isFinite(cMeta.x) && Number.isFinite(cMeta.y)) {
+                        labelPos = transform.map([cMeta.x, cMeta.y]);
+                    } else {
+                        labelPos = transform.map(polygonCentroid(ring));
+                    }
+
+                    const label = createSvgNode('text', {
+                        x: labelPos[0],
+                        y: labelPos[1],
+                        'text-anchor': 'middle',
+                        'dominant-baseline': 'middle',
+                        'font-size': '10',
+                        fill: '#20343d'
+                    });
+                    label.textContent = name.length > 16 ? `${name.slice(0, 16)}...` : name;
+                    group.appendChild(label);
+                }
+            });
+        }
+
+        function renderMetrics(cartogram) {
+            const m = cartogram.metadata || {};
+            const items = [
+                ['Shape', m.shapeType || '--'],
+                ['Features', Number.isFinite(m.featureCount) ? String(m.featureCount) : '--'],
+                ['Iterations', Number.isFinite(m.iterations) ? String(m.iterations) : '--'],
+                ['k', Number.isFinite(m.k) ? String(m.k) : '--'],
+                ['Overlaps', m.hasOverlaps ? 'Yes' : 'No'],
+                ['Refined', m.refinementApplied ? 'Yes' : 'No'],
+                ['Strict Solver', m.strictNoOverlap ? 'On' : 'Off'],
+                ['Seed', m.seed ?? 'None']
+            ];
+
+            metricGrid.innerHTML = '';
+            items.forEach(([k, v]) => {
+                const card = document.createElement('div');
+                card.className = 'metric';
+                const key = document.createElement('span');
+                key.className = 'k';
+                key.textContent = k;
+                const val = document.createElement('span');
+                val.className = 'v';
+                val.textContent = v;
+                card.appendChild(key);
+                card.appendChild(val);
+                metricGrid.appendChild(card);
+            });
+        }
+
+        async function loadData() {
+            setLoading(true);
+            setStatus(`Loading ${dataSelect.value} ...`);
+            try {
+                const [cartRes, origRes] = await Promise.all([
+                    fetch(dataSelect.value),
+                    fetch('london.geojson')
+                ]);
+
+                if (!cartRes.ok) {
+                    throw new Error(`Cannot load ${dataSelect.value} (${cartRes.status})`);
+                }
+                if (!origRes.ok) {
+                    throw new Error(`Cannot load london.geojson (${origRes.status})`);
+                }
+
+                const cartogram = await cartRes.json();
+                const original = await origRes.json();
+
+                if (!Array.isArray(cartogram.features) || !cartogram.features.length) {
+                    throw new Error('Cartogram file is missing features');
+                }
+
+                currentCartogram = cartogram;
+                currentOriginal = original;
+                refitAndRender();
+
+                setStatus(`Loaded ${dataSelect.value} (${cartogram.features.length} features).`);
+            } catch (error) {
+                setStatus(error.message, true);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function refitAndRender() {
+            if (!currentCartogram || !currentOriginal) return;
+
+            const cartBounds = getBoundsFromFeatures(currentCartogram.features);
+            const origBounds = getBoundsFromFeatures(currentOriginal.features);
+            currentTransforms = {
+                cart: buildTransform(cartBounds, cartogramSvg),
+                orig: buildTransform(origBounds, originalSvg)
+            };
+
+            renderOriginal(currentOriginal, currentCartogram, currentTransforms.orig);
+            renderCartogram(currentCartogram, currentTransforms.cart);
+            renderMetrics(currentCartogram);
+        }
+
+        function downloadText(filename, text, mime = 'application/json') {
+            const blob = new Blob([text], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportCurrentSvg() {
+            if (!currentCartogram) return;
+            const serializer = new XMLSerializer();
+            const clone = cartogramSvg.cloneNode(true);
+            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            const content = serializer.serializeToString(clone);
+            const base = dataSelect.value.replace(/\.json$/i, '');
+            downloadText(`${base}.svg`, content, 'image/svg+xml');
+        }
+
+        function exportCurrentJson() {
+            if (!currentCartogram) return;
+            const base = dataSelect.value.replace(/\.json$/i, '');
+            downloadText(`${base}.json`, JSON.stringify(currentCartogram, null, 2), 'application/json');
+        }
+
+        document.getElementById('loadBtn').addEventListener('click', loadData);
+        document.getElementById('fitBtn').addEventListener('click', refitAndRender);
+        document.getElementById('exportSvgBtn').addEventListener('click', exportCurrentSvg);
+        document.getElementById('exportJsonBtn').addEventListener('click', exportCurrentJson);
+        opacitySlider.addEventListener('input', refitAndRender);
+        showOriginalLabels.addEventListener('change', refitAndRender);
+        showCartLabels.addEventListener('change', refitAndRender);
+        window.addEventListener('resize', () => {
+            if (currentCartogram) {
+                window.requestAnimationFrame(refitAndRender);
+            }
+        });
+
         loadData();
     </script>
 </body>

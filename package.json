@@ -28,6 +28,7 @@
     "dev": "rollup -c -w",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-embed": "node scripts/test-embed.js",
+    "test-dorling": "node scripts/test-dorling.js",
     "benchmark-pairwise": "node scripts/benchmark-pairwise.js",
     "prepublishOnly": "npm run build"
   },

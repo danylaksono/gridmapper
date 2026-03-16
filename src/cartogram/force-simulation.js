@@ -3,6 +3,28 @@
  * Implements force-directed layout to eliminate overlapping shapes
  */
 
+function createSeededRandom(seed = null) {
+    if (seed === null || seed === undefined || seed === '') {
+        return Math.random;
+    }
+
+    let s = Number(seed);
+    if (!Number.isFinite(s)) {
+        s = 1;
+    }
+    s = (s >>> 0) || 1;
+
+    return function seeded() {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 4294967296;
+    };
+}
+
+function randomUnitVector(rng) {
+    const angle = (rng() * 2 - 1) * Math.PI;
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+}
+
 /**
  * Apply pair-wise repulsion forces to eliminate overlaps
  * Uses simple O(n²) algorithm - suitable for < 500 nodes
@@ -10,7 +32,7 @@
  * @param {number} strength - Repulsion strength (0-1)
  * @returns {void} Modifies nodes in place
  */
-export function applyPairwiseRepulsion(nodes, strength = 1.0) {
+export function applyPairwiseRepulsion(nodes, strength = 1.0, rng = Math.random) {
     const n = nodes.length;
     
     for (let i = 0; i < n; i++) {
@@ -46,6 +68,13 @@ export function applyPairwiseRepulsion(nodes, strength = 1.0) {
                 nodeA.y -= ny * moveA;
                 nodeB.x += nx * moveB;
                 nodeB.y += ny * moveB;
+            } else if (distance === 0 && minDist > 0) {
+                const dir = randomUnitVector(rng);
+                const push = (minDist * 0.5) * strength;
+                nodeA.x -= dir.x * push;
+                nodeA.y -= dir.y * push;
+                nodeB.x += dir.x * push;
+                nodeB.y += dir.y * push;
             }
         }
     }
@@ -57,7 +86,7 @@ export function applyPairwiseRepulsion(nodes, strength = 1.0) {
  * @param {number} strength - Repulsion strength (0-1)
  * @returns {void} Modifies nodes in place
  */
-export function applyRectangularRepulsion(nodes, strength = 1.0) {
+export function applyRectangularRepulsion(nodes, strength = 1.0, rng = Math.random) {
     const n = nodes.length;
     
     for (let i = 0; i < n; i++) {
@@ -98,6 +127,12 @@ export function applyRectangularRepulsion(nodes, strength = 1.0) {
                     nodeA.y -= sign * moveA;
                     nodeB.y += sign * moveB;
                 }
+            } else if (dx === 0 && dy === 0) {
+                const dir = randomUnitVector(rng);
+                nodeA.x -= dir.x * 0.001 * strength;
+                nodeA.y -= dir.y * 0.001 * strength;
+                nodeB.x += dir.x * 0.001 * strength;
+                nodeB.y += dir.y * 0.001 * strength;
             }
         }
     }
@@ -171,10 +206,23 @@ export function runForceSimulation(nodes, options = {}) {
         edges = [],
         coolingFactor = 0.998,  // Slow cooling
         minRepulsion = 0.5,     // Higher minimum repulsion
+        seed = null,
+        initialJitter = 0,
         onProgress = null
     } = options;
+
+    const rng = createSeededRandom(seed);
     
     let currentRepulsion = repulsionStrength;
+
+    if (initialJitter > 0) {
+        for (const node of nodes) {
+            const jx = (rng() * 2 - 1) * initialJitter;
+            const jy = (rng() * 2 - 1) * initialJitter;
+            node.x += jx;
+            node.y += jy;
+        }
+    }
     
     // Main simulation loop
     for (let i = 0; i < iterations; i++) {
@@ -187,9 +235,9 @@ export function runForceSimulation(nodes, options = {}) {
         const repulsionPasses = hasOverlaps(nodes, shapeType) ? 3 : 1;
         for (let pass = 0; pass < repulsionPasses; pass++) {
             if (shapeType === 'circle' || shapeType === 'hexagon') {
-                applyPairwiseRepulsion(nodes, currentRepulsion);
+                applyPairwiseRepulsion(nodes, currentRepulsion, rng);
             } else {
-                applyRectangularRepulsion(nodes, currentRepulsion);
+                applyRectangularRepulsion(nodes, currentRepulsion, rng);
             }
         }
         
@@ -214,9 +262,9 @@ export function runForceSimulation(nodes, options = {}) {
     const cleanupIterations = Math.min(500, iterations / 2);
     for (let i = 0; i < cleanupIterations && hasOverlaps(nodes, shapeType); i++) {
         if (shapeType === 'circle' || shapeType === 'hexagon') {
-            applyPairwiseRepulsion(nodes, 1.0);
+            applyPairwiseRepulsion(nodes, 1.0, rng);
         } else {
-            applyRectangularRepulsion(nodes, 1.0);
+            applyRectangularRepulsion(nodes, 1.0, rng);
         }
     }
     
@@ -258,4 +306,131 @@ export function hasOverlaps(nodes, shapeType = 'circle') {
     }
     
     return false;
+}
+
+/**
+ * Ratio of overlapping pairs to all pairs.
+ * @param {Array} nodes - Array of node objects
+ * @param {string} shapeType - 'circle' | 'hexagon' | 'rectangle'
+ * @returns {number} Overlap ratio in [0,1]
+ */
+export function getOverlapRatio(nodes, shapeType = 'circle') {
+    const n = nodes.length;
+    if (n < 2) return 0;
+
+    let overlaps = 0;
+    const totalPairs = (n * (n - 1)) / 2;
+
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const nodeA = nodes[i];
+            const nodeB = nodes[j];
+
+            if (shapeType === 'circle' || shapeType === 'hexagon') {
+                const dx = nodeB.x - nodeA.x;
+                const dy = nodeB.y - nodeA.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDist = nodeA.radius + nodeB.radius;
+                if (distance < minDist * 0.99) overlaps++;
+            } else {
+                const overlapX = (nodeA.width / 2 + nodeB.width / 2) - Math.abs(nodeB.x - nodeA.x);
+                const overlapY = (nodeA.height / 2 + nodeB.height / 2) - Math.abs(nodeB.y - nodeA.y);
+                if (overlapX > 0.01 && overlapY > 0.01) overlaps++;
+            }
+        }
+    }
+
+    return overlaps / totalPairs;
+}
+
+/**
+ * Deterministic final-pass overlap resolver for rectangular/square nodes.
+ * Prioritizes removing overlaps over strict position preservation.
+ * @param {Array} nodes - Array of rectangular node objects
+ * @param {Object} options - Resolver options
+ * @returns {Object} Diagnostics about the resolver run
+ */
+export function resolveRectangularOverlapsStrict(nodes, options = {}) {
+    const {
+        maxIterations = 2500,
+        epsilon = 1e-4,
+        gap = 1e-4,
+        anchor = 0.002
+    } = options;
+
+    const overlapsBefore = hasOverlaps(nodes, 'rectangle');
+    if (!overlapsBefore) {
+        return {
+            iterations: 0,
+            movedPairs: 0,
+            overlapsBefore: false,
+            overlapsAfter: false
+        };
+    }
+
+    let movedPairs = 0;
+    let iter = 0;
+
+    for (iter = 0; iter < maxIterations; iter++) {
+        let movedThisIter = 0;
+
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const a = nodes[i];
+                const b = nodes[j];
+
+                const halfWidthA = a.width / 2;
+                const halfHeightA = a.height / 2;
+                const halfWidthB = b.width / 2;
+                const halfHeightB = b.height / 2;
+
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const overlapX = (halfWidthA + halfWidthB) - Math.abs(dx);
+                const overlapY = (halfHeightA + halfHeightB) - Math.abs(dy);
+
+                if (overlapX > epsilon && overlapY > epsilon) {
+                    const areaA = Math.max(epsilon, a.width * a.height);
+                    const areaB = Math.max(epsilon, b.width * b.height);
+                    const total = areaA + areaB;
+                    const pushA = areaB / total;
+                    const pushB = areaA / total;
+
+                    if (overlapX <= overlapY) {
+                        const sign = dx >= 0 ? 1 : -1;
+                        const delta = overlapX + gap;
+                        a.x -= sign * delta * pushA;
+                        b.x += sign * delta * pushB;
+                    } else {
+                        const sign = dy >= 0 ? 1 : -1;
+                        const delta = overlapY + gap;
+                        a.y -= sign * delta * pushA;
+                        b.y += sign * delta * pushB;
+                    }
+
+                    movedPairs++;
+                    movedThisIter++;
+                }
+            }
+        }
+
+        // Gentle return toward original positions once pair collisions are reduced.
+        if (anchor > 0) {
+            for (const n of nodes) {
+                n.x += (n.originalX - n.x) * anchor;
+                n.y += (n.originalY - n.y) * anchor;
+            }
+        }
+
+        if (movedThisIter === 0 || !hasOverlaps(nodes, 'rectangle')) {
+            break;
+        }
+    }
+
+    return {
+        iterations: iter + 1,
+        movedPairs,
+        overlapsBefore: overlapsBefore,
+        overlapsAfter: hasOverlaps(nodes, 'rectangle')
+    };
 }

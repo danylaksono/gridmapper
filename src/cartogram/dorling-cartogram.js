@@ -7,7 +7,7 @@
  * - Nusrat, S. & Kobourov, S. (2016). The State of the Art in Cartograms.
  */
 
-import { runForceSimulation, hasOverlaps } from './force-simulation.js';
+import { runForceSimulation, hasOverlaps, resolveRectangularOverlapsStrict } from './force-simulation.js';
 import { 
     createFeatureCollection, 
     weightToRadius, 
@@ -42,6 +42,10 @@ export function createDorlingCartogram(geojson, weightField, options = {}) {
         adjacencyStrength = 0.05,    // Strength of adjacency attraction
         coolingFactor = 0.998,       // Rate of repulsion decay per iteration
         minWeight = null,            // Minimum weight (features below are excluded)
+        seed = null,                 // Optional deterministic seed for reproducibility
+        refineOverlaps = true,       // Automatically run stronger cleanup if overlaps remain
+        refinementIterations = 1200, // Max iterations for refinement pass
+        strictNoOverlap = false,     // If true, run deterministic strict overlap fallback
         onProgress = null            // Progress callback: (progress: 0-1) => void
     } = options;
     
@@ -149,8 +153,37 @@ export function createDorlingCartogram(geojson, weightField, options = {}) {
         adjacencyStrength,
         edges,
         coolingFactor,
+        seed,
+        initialJitter: seed === null || seed === undefined ? 0 : 1e-6,
         onProgress
     });
+
+    let refinementApplied = false;
+    let strictResolverMeta = null;
+    if (refineOverlaps && hasOverlaps(nodes, shapeType)) {
+        refinementApplied = true;
+        runForceSimulation(nodes, {
+            iterations: refinementIterations,
+            shapeType,
+            repulsionStrength: Math.max(1.2, repulsionStrength),
+            anchorStrength: 0,
+            adjacencyStrength: preserveAdjacency ? adjacencyStrength * 0.5 : 0,
+            edges,
+            coolingFactor: 0.999,
+            minRepulsion: 0.9,
+            seed,
+            initialJitter: 0,
+            onProgress: null
+        });
+    }
+
+    // Final deterministic fallback for rectangular variants when strict no-overlap is requested.
+    if (strictNoOverlap && (shapeType === 'square' || shapeType === 'rectangle') && hasOverlaps(nodes, shapeType)) {
+        strictResolverMeta = resolveRectangularOverlapsStrict(nodes, {
+            maxIterations: Math.max(2000, refinementIterations),
+            anchor: 0.001
+        });
+    }
     
     // Denormalize coordinates back to original coordinate space
     nodes.forEach(node => {
@@ -175,6 +208,11 @@ export function createDorlingCartogram(geojson, weightField, options = {}) {
         shapeType,
         k,
         iterations,
+        seed,
+        refinementApplied,
+        refinementIterations,
+        strictNoOverlap,
+        strictResolver: strictResolverMeta,
         featureCount: nodes.length,
         hasOverlaps: stillHasOverlaps,
         bounds: bounds,
@@ -197,8 +235,12 @@ export function createDemersCartogram(geojson, weightField, options = {}) {
     return createDorlingCartogram(geojson, weightField, {
         shapeType: 'square',
         preserveAdjacency: true,
-        adjacencyStrength: 0.1,
-        anchorStrength: 0.01,  // Lower anchor for more contiguity
+        adjacencyStrength: 0.08,
+        repulsionStrength: 1.25,
+        anchorStrength: 0.006,
+        refineOverlaps: true,
+        refinementIterations: 1800,
+        strictNoOverlap: true,
         ...options
     });
 }
@@ -220,31 +262,6 @@ function calculateBounds(nodes) {
     }
     
     return { minX, maxX, minY, maxY };
-}
-
-/**
- * Convert adjacency graph to edge list for force simulation
- * @param {Map} adjacencyGraph - Map from computeAdjacencyGraph
- * @param {Array} nodes - Array of node objects
- * @returns {Array} Array of [sourceIndex, targetIndex] pairs
- */
-function adjacencyGraphToEdges(adjacencyGraph, nodes) {
-    const edges = [];
-    const seen = new Set();
-    
-    // Build index lookup from feature properties
-    // Assumes nodes have same order as original features
-    adjacencyGraph.forEach((neighbors, featureIndex) => {
-        neighbors.forEach(neighborIndex => {
-            const edgeKey = [featureIndex, neighborIndex].sort().join('-');
-            if (!seen.has(edgeKey)) {
-                seen.add(edgeKey);
-                edges.push([featureIndex, neighborIndex]);
-            }
-        });
-    });
-    
-    return edges;
 }
 
 /**
