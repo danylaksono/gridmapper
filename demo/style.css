@@ -310,6 +310,40 @@ body {
     gap: 14px;
 }
 
+.advanced-details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: #f6fbf9;
+    overflow: hidden;
+}
+
+.advanced-details summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 10px;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: var(--text-strong);
+    background: #edf6f2;
+    border-bottom: 1px solid transparent;
+}
+
+.advanced-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.advanced-details[open] summary {
+    border-bottom-color: var(--border);
+}
+
+.advanced-details-body {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+}
+
 .control-section {
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);

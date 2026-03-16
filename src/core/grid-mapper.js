@@ -180,6 +180,8 @@ export class GridMapper {
                 spacerSet,
                 adjacencyWeight,
                 adjacencyDiagonal,
+                embeddingTargets: options.embeddingTargets,
+                embeddingWeight: options.embeddingWeight || 0,
                 // pass-through extended options
                 pairwiseAdjacency: options.pairwiseAdjacency,
                 adjacencyGraph: options.adjacencyGraph,

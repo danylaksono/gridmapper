@@ -1,5 +1,5 @@
 // Import GridMapper and GLPK solver from local `src/index.js` ES module
-import { GridMapper, GLPKSolver, createGridGeoJson, estimateParameters, computePolygonCentroid } from '../src/index.js';
+import { GridMapper, GLPKSolver, createGridGeoJson, estimateParameters, computePolygonCentroid, computeAdjacencyGraph } from '../src/index.js';
 import glpk from 'https://cdn.jsdelivr.net/npm/glpk.js@4.0.2/dist/index.js';
 
 // Initialize
@@ -43,11 +43,24 @@ const fileInfo = document.getElementById('file-info');
 const resetButton = document.getElementById('reset-data');
 const editModeCheckbox = document.getElementById('edit-mode');
 const resetEditsButton = document.getElementById('reset-edits');
+const compactnessWeightInput = document.getElementById('compactness-weight');
+const compactnessWeightValue = document.getElementById('compactness-weight-value');
+const adjacencyWeightInput = document.getElementById('adjacency-weight');
+const adjacencyWeightValue = document.getElementById('adjacency-weight-value');
+const adjacencyDiagonalInput = document.getElementById('adjacency-diagonal');
+const pairwiseEnabledInput = document.getElementById('pairwise-enabled');
+const pairwiseEdgeLimitInput = document.getElementById('pairwise-edge-limit');
+const pairwiseNearestCellsInput = document.getElementById('pairwise-nearest-cells');
+const pairwiseWeightInput = document.getElementById('pairwise-weight');
+const runPostProcessInput = document.getElementById('run-post-process');
+const runSAInput = document.getElementById('run-sa');
+const saIterInput = document.getElementById('sa-iter');
 
 // Edit mode state
 let editModeEnabled = false;
 let originalAssignmentsSnapshot = null; // deep clone of assignments when allocation completes
 let hasEdits = false;
+let cachedAdjacencyGraph = null;
 
 // Map dimensions - calculate dynamically to fit viewport
 function calculateMapDimensions() {
@@ -141,6 +154,25 @@ function normalizeGridDimension(rawValue, minValue, maxValue, fallbackValue) {
     const fallback = Number.isFinite(fallbackValue) ? fallbackValue : min;
     const safe = Number.isFinite(parsed) ? parsed : fallback;
     return Math.max(min, Math.min(max, safe));
+}
+
+function parseFloatOr(value, fallbackValue) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallbackValue;
+}
+
+function parseIntOr(value, fallbackValue) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallbackValue;
+}
+
+function updateAdvancedValueDisplays() {
+    if (compactnessWeightInput && compactnessWeightValue) {
+        compactnessWeightValue.textContent = parseFloatOr(compactnessWeightInput.value, 1).toFixed(1);
+    }
+    if (adjacencyWeightInput && adjacencyWeightValue) {
+        adjacencyWeightValue.textContent = parseFloatOr(adjacencyWeightInput.value, 0).toFixed(2);
+    }
 }
 
 function getFeatureKey(feature, index) {
@@ -368,6 +400,7 @@ async function loadData(geojson, fileName = 'london.geojson') {
     originalBounds = bounds;
     currentGeoJson = fixedGeoJson;
     currentSourceFileName = fileName;
+    cachedAdjacencyGraph = null;
 
     updateRunStats({
         featureCount: processedData.length,
@@ -450,7 +483,17 @@ function setupEventListeners() {
         compactnessSlider,
         gridTypeSelect,
         distanceMetricSelect,
-        rotatePCAInput
+        rotatePCAInput,
+        compactnessWeightInput,
+        adjacencyWeightInput,
+        adjacencyDiagonalInput,
+        pairwiseEnabledInput,
+        pairwiseEdgeLimitInput,
+        pairwiseNearestCellsInput,
+        pairwiseWeightInput,
+        runPostProcessInput,
+        runSAInput,
+        saIterInput
     ];
 
     let allocationTimeout = null;
@@ -496,6 +539,7 @@ function setupEventListeners() {
     }
 
     inputs.forEach(input => {
+        if (!input) return;
         input.addEventListener('change', () => {
             // Skip if we're updating parameters programmatically
             if (!isUpdatingParameters) {
@@ -509,11 +553,16 @@ function setupEventListeners() {
             if (input === compactnessSlider) {
                 compactnessValue.textContent = compactnessSlider.value;
             }
-            if (input === compactnessSlider) {
+            if (input === compactnessWeightInput || input === adjacencyWeightInput) {
+                updateAdvancedValueDisplays();
+            }
+            if (input === compactnessSlider || input === compactnessWeightInput || input === adjacencyWeightInput) {
                 scheduleAllocation(120);
             }
         });
     });
+
+    updateAdvancedValueDisplays();
 
     // File upload handler
     fileUpload.addEventListener('change', async (event) => {
@@ -617,8 +666,28 @@ async function allocateAndDraw() {
             gridType: gridTypeSelect.value,
             distanceMetric: distanceMetricSelect.value,
             rotateByPCA: rotatePCAInput.checked,
+            compactnessWeight: parseFloatOr(compactnessWeightInput?.value, 1),
+            adjacencyWeight: parseFloatOr(adjacencyWeightInput?.value, 0),
+            adjacencyDiagonal: Boolean(adjacencyDiagonalInput?.checked),
+            runPostProcess: Boolean(runPostProcessInput?.checked),
+            runSA: Boolean(runSAInput?.checked),
+            saIter: parseIntOr(saIterInput?.value, 2000),
             mip: () => new GLPKSolver(glpkInstance)
         };
+
+        const pairwiseEnabled = Boolean(pairwiseEnabledInput?.checked);
+        if (pairwiseEnabled) {
+            if (!cachedAdjacencyGraph && currentGeoJson?.features) {
+                cachedAdjacencyGraph = computeAdjacencyGraph(currentGeoJson.features);
+            }
+            config.pairwiseAdjacency = {
+                enabled: true,
+                edgeLimit: parseIntOr(pairwiseEdgeLimitInput?.value, 150),
+                nearestCells: parseIntOr(pairwiseNearestCellsInput?.value, 6),
+                weight: parseFloatOr(pairwiseWeightInput?.value, 0.5)
+            };
+            config.adjacencyGraph = cachedAdjacencyGraph;
+        }
 
         const result = await mapper.allocate(londonData, config);
         currentResult = result;
