@@ -161,15 +161,6 @@ export function estimateParameters(geojson, options = {}) {
     // 3. Grid Dimensions
     const activeBounds = rotateByPCA ? rotatedPointsBounds : pointsBounds;
     const rawRatio = activeBounds.height / Math.max(activeBounds.width, 1e-9);
-    let ratioOverride = rawRatio;
-
-    if (rotateByPCA) {
-        ratioOverride = Math.pow(Math.max(rawRatio, 1e-6), 0.6);
-        ratioOverride = ratioOverride + (1 - ratioOverride) * 0.25;
-    }
-
-    ratioOverride = Math.min(2.4, Math.max(0.45, ratioOverride));
-
     const elongation = Math.max(activeBounds.width, activeBounds.height) /
         Math.max(1e-9, Math.min(activeBounds.width, activeBounds.height));
 
@@ -182,14 +173,31 @@ export function estimateParameters(geojson, options = {}) {
     const coverageRatio = Math.min(1, totalFeatureArea / mapArea);
     const coverageBoost = Math.max(0, coverageRatio - 0.35);
 
-    // For small, well-covered datasets (like boroughs), bias strongly towards a squarer grid
-    if (points.length < 50 && coverageBoost > 0.25) {
-        ratioOverride = ratioOverride * 0.1 + 0.9 * 0.85; // push near ~0.85
+    // Adaptively soften the aspect ratio. Highly elongated maps should keep their shape,
+    // while dense compact maps can be nudged toward a squarer starter grid.
+    const rawLogRatio = Math.log(Math.max(rawRatio, 1e-9));
+    let logCompression = rotateByPCA ? 0.85 : 0.75;
+    if (elongation > 2.2) logCompression += 0.08;
+    if (elongation > 3.5) logCompression += 0.05;
+    if (coverageRatio > 0.55 && points.length < 90) logCompression -= 0.08;
+    logCompression = Math.max(0.65, Math.min(0.98, logCompression));
+
+    let ratioOverride = Math.exp(rawLogRatio * logCompression);
+    const minRatio = elongation > 4 ? 0.18 : (elongation > 2.5 ? 0.24 : 0.3);
+    const maxRatio = 1 / minRatio;
+    ratioOverride = Math.max(minRatio, Math.min(maxRatio, ratioOverride));
+
+    // For small, very compact datasets (like contiguous boroughs), nudge mildly toward square.
+    // Keep this gentle so elongated chains (Japan/Chile-like) are not over-corrected.
+    if (points.length < 50 && coverageBoost > 0.25 && elongation < 1.9) {
+        ratioOverride = ratioOverride * 0.7 + 0.3 * 0.85;
     }
 
     const adjacencyStats = computeAdjacencyStats(extracted);
     // Reduce adjacency influence (very connected boroughs should not blow up cols)
-    const adjacencyBoost = Math.max(0, (adjacencyStats.averageDegree || 0) - 2.5) * 0.15;
+    let adjacencyBoost = Math.max(0, (adjacencyStats.averageDegree || 0) - 2.5) * 0.1;
+    if (elongation > 2.2) adjacencyBoost *= 0.6;
+    if (coverageRatio < 0.3) adjacencyBoost *= 0.7;
     const densityBoost = coverageBoost + adjacencyBoost;
 
     const targetCells = Math.ceil(points.length * (1 + slack + densityBoost * 0.45));
