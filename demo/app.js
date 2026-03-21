@@ -43,8 +43,6 @@ const fileInfo = document.getElementById('file-info');
 const resetButton = document.getElementById('reset-data');
 const editModeCheckbox = document.getElementById('edit-mode');
 const resetEditsButton = document.getElementById('reset-edits');
-const compactnessWeightInput = document.getElementById('compactness-weight');
-const compactnessWeightValue = document.getElementById('compactness-weight-value');
 const adjacencyWeightInput = document.getElementById('adjacency-weight');
 const adjacencyWeightValue = document.getElementById('adjacency-weight-value');
 const adjacencyDiagonalInput = document.getElementById('adjacency-diagonal');
@@ -52,9 +50,15 @@ const pairwiseEnabledInput = document.getElementById('pairwise-enabled');
 const pairwiseEdgeLimitInput = document.getElementById('pairwise-edge-limit');
 const pairwiseNearestCellsInput = document.getElementById('pairwise-nearest-cells');
 const pairwiseWeightInput = document.getElementById('pairwise-weight');
+const pairwiseControlsWrap = document.getElementById('pairwise-controls-wrap');
+const pairwiseNote = document.getElementById('pairwise-note');
 const runPostProcessInput = document.getElementById('run-post-process');
 const runSAInput = document.getElementById('run-sa');
 const saIterInput = document.getElementById('sa-iter');
+const runAdjFixInput = document.getElementById('run-adj-fix');
+const adjFixIterInput = document.getElementById('adj-fix-iter');
+
+const PAIRWISE_MIN_FEATURES = 25;
 
 // Edit mode state
 let editModeEnabled = false;
@@ -167,12 +171,50 @@ function parseIntOr(value, fallbackValue) {
 }
 
 function updateAdvancedValueDisplays() {
-    if (compactnessWeightInput && compactnessWeightValue) {
-        compactnessWeightValue.textContent = parseFloatOr(compactnessWeightInput.value, 1).toFixed(1);
-    }
     if (adjacencyWeightInput && adjacencyWeightValue) {
         adjacencyWeightValue.textContent = parseFloatOr(adjacencyWeightInput.value, 0).toFixed(2);
     }
+}
+
+function setControlEnabled(input, enabled) {
+    if (!input) return;
+    input.disabled = !enabled;
+    const group = input.closest('.control-group');
+    if (group) {
+        group.classList.toggle('is-disabled', !enabled);
+    }
+}
+
+function updatePairwiseAvailability(featureCount = londonData?.length || 0) {
+    const enabledByData = featureCount >= PAIRWISE_MIN_FEATURES;
+    if (!pairwiseControlsWrap || !pairwiseNote) return enabledByData;
+
+    if (!enabledByData && pairwiseEnabledInput) {
+        pairwiseEnabledInput.checked = false;
+    }
+
+    pairwiseControlsWrap.classList.toggle('pairwise-hidden', !enabledByData);
+    pairwiseNote.classList.toggle('pairwise-note-visible', !enabledByData);
+    pairwiseNote.textContent = enabledByData
+        ? ''
+        : `Pairwise adjacency is hidden for datasets with fewer than ${PAIRWISE_MIN_FEATURES} features.`;
+
+    return enabledByData;
+}
+
+function updateAdvancedControlState() {
+    const adjacencyWeight = parseFloatOr(adjacencyWeightInput?.value, 0);
+    const pairwiseAvailable = updatePairwiseAvailability();
+    const pairwiseEnabled = pairwiseAvailable && Boolean(pairwiseEnabledInput?.checked);
+    const runSA = Boolean(runSAInput?.checked);
+    const runAdjFix = Boolean(runAdjFixInput?.checked);
+
+    setControlEnabled(adjacencyDiagonalInput, adjacencyWeight > 0);
+    setControlEnabled(pairwiseEdgeLimitInput, pairwiseEnabled);
+    setControlEnabled(pairwiseNearestCellsInput, pairwiseEnabled);
+    setControlEnabled(pairwiseWeightInput, pairwiseEnabled);
+    setControlEnabled(saIterInput, runSA);
+    setControlEnabled(adjFixIterInput, runAdjFix);
 }
 
 function getFeatureKey(feature, index) {
@@ -401,6 +443,7 @@ async function loadData(geojson, fileName = 'london.geojson') {
     currentGeoJson = fixedGeoJson;
     currentSourceFileName = fileName;
     cachedAdjacencyGraph = null;
+    updatePairwiseAvailability(processedData.length);
 
     updateRunStats({
         featureCount: processedData.length,
@@ -484,7 +527,6 @@ function setupEventListeners() {
         gridTypeSelect,
         distanceMetricSelect,
         rotatePCAInput,
-        compactnessWeightInput,
         adjacencyWeightInput,
         adjacencyDiagonalInput,
         pairwiseEnabledInput,
@@ -493,7 +535,9 @@ function setupEventListeners() {
         pairwiseWeightInput,
         runPostProcessInput,
         runSAInput,
-        saIterInput
+        saIterInput,
+        runAdjFixInput,
+        adjFixIterInput
     ];
 
     let allocationTimeout = null;
@@ -553,16 +597,25 @@ function setupEventListeners() {
             if (input === compactnessSlider) {
                 compactnessValue.textContent = compactnessSlider.value;
             }
-            if (input === compactnessWeightInput || input === adjacencyWeightInput) {
+            if (input === adjacencyWeightInput) {
                 updateAdvancedValueDisplays();
             }
-            if (input === compactnessSlider || input === compactnessWeightInput || input === adjacencyWeightInput) {
+            if (
+                input === adjacencyWeightInput ||
+                input === pairwiseEnabledInput ||
+                input === runSAInput ||
+                input === runAdjFixInput
+            ) {
+                updateAdvancedControlState();
+            }
+            if (input === compactnessSlider || input === adjacencyWeightInput) {
                 scheduleAllocation(120);
             }
         });
     });
 
     updateAdvancedValueDisplays();
+    updateAdvancedControlState();
 
     // File upload handler
     fileUpload.addEventListener('change', async (event) => {
@@ -666,16 +719,17 @@ async function allocateAndDraw() {
             gridType: gridTypeSelect.value,
             distanceMetric: distanceMetricSelect.value,
             rotateByPCA: rotatePCAInput.checked,
-            compactnessWeight: parseFloatOr(compactnessWeightInput?.value, 1),
             adjacencyWeight: parseFloatOr(adjacencyWeightInput?.value, 0),
             adjacencyDiagonal: Boolean(adjacencyDiagonalInput?.checked),
             runPostProcess: Boolean(runPostProcessInput?.checked),
             runSA: Boolean(runSAInput?.checked),
             saIter: parseIntOr(saIterInput?.value, 2000),
+            runAdjacencyFix: Boolean(runAdjFixInput?.checked),
+            adjFixIter: parseIntOr(adjFixIterInput?.value, 500),
             mip: () => new GLPKSolver(glpkInstance)
         };
 
-        const pairwiseEnabled = Boolean(pairwiseEnabledInput?.checked);
+        const pairwiseEnabled = updatePairwiseAvailability() && Boolean(pairwiseEnabledInput?.checked);
         if (pairwiseEnabled) {
             if (!cachedAdjacencyGraph && currentGeoJson?.features) {
                 cachedAdjacencyGraph = computeAdjacencyGraph(currentGeoJson.features);

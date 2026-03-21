@@ -147,7 +147,8 @@ export class GridMapper {
 
         // Simple spacer handling: just check if we have enough cells
         const spacerSet = new Set(spacers.map(s => `${s[0]}_${s[1]}`));
-        const totalAvailable = gridRows * gridCols - spacerSet.size;
+        const hardSpacerCount = spacerMode === 'hard' ? spacerSet.size : 0;
+        const totalAvailable = gridRows * gridCols - hardSpacerCount;
 
         if (totalAvailable < points.length) {
             throw new Error(
@@ -195,7 +196,7 @@ export class GridMapper {
         // 7. Optional post-processing (disabled by default to match original simplicity)
         let finalResult = result;
         let postProcessMeta = null;
-        if (options.runPostProcess || options.runSA) {
+        if (options.runPostProcess || options.runSA || options.runAdjacencyFix) {
 
             const swapConfig = {
                 maxIter: options.maxSwapIter || 1000,
@@ -209,7 +210,10 @@ export class GridMapper {
                 runSA: options.runSA === undefined ? false : Boolean(options.runSA),
                 saIter: options.saIter || 2000,
                 saInitialTemp: options.saInitialTemp || 1.0,
-                saCooling: options.saCooling || 0.995
+                saCooling: options.saCooling || 0.995,
+                adjacencyGraph: options.adjacencyGraph,
+                runAdjacencyFix: Boolean(options.runAdjacencyFix),
+                adjFixIter: options.adjFixIter || 500
             };
             const postRes = postProcessSwaps(result, normalizedPoints, gridRows, gridCols, swapConfig);
             finalResult = postRes.assignments;

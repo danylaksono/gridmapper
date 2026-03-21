@@ -344,6 +344,36 @@ body {
     padding: 10px;
 }
 
+.advanced-note {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--muted);
+    background: #eef6f3;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+}
+
+#pairwise-controls-wrap.pairwise-hidden .control-group {
+    display: none;
+}
+
+.pairwise-note {
+    display: none;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--muted);
+    background: #eef4fa;
+    border: 1px dashed #b9ccd6;
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.pairwise-note.pairwise-note-visible {
+    display: block;
+}
+
 .control-section {
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
@@ -366,6 +396,10 @@ body {
 
 .control-group:last-child {
     margin-bottom: 0;
+}
+
+.control-group.is-disabled {
+    opacity: 0.55;
 }
 
 .control-group label {

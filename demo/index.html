@@ -161,17 +161,12 @@
                         </div>
 
                         <details class="advanced-details">
-                            <summary>Advanced Solver Options</summary>
+                            <summary>Advanced Topology Options</summary>
                             <div class="advanced-details-body">
+                                <p class="advanced-note">These options target topology and refinement. Core shape
+                                    control is mostly from grid size, compactness, and distance metric.</p>
                                 <div class="control-section">
                                     <div class="control-section-title">Objective and Topology</div>
-                                    <div class="control-group"
-                                        data-help="Scales distance cost in the objective before optimization.">
-                                        <label for="compactness-weight">Distance Weight</label>
-                                        <input type="range" id="compactness-weight" min="0.1" max="3" step="0.1"
-                                            value="1.0">
-                                        <span class="value-display" id="compactness-weight-value">1.0</span>
-                                    </div>
                                     <div class="control-group"
                                         data-help="Rewards neighboring occupied cells to encourage contiguous clusters.">
                                         <label for="adjacency-weight">Adjacency Weight</label>
@@ -184,30 +179,33 @@
                                             <input type="checkbox" id="adjacency-diagonal"> Count diagonal adjacency
                                         </label>
                                     </div>
-                                    <div class="control-group"
-                                        data-help="Enable sparse pairwise feature adjacency rewards using the feature graph.">
-                                        <label for="pairwise-enabled">
-                                            <input type="checkbox" id="pairwise-enabled"> Enable sparse pairwise
-                                            adjacency
-                                        </label>
-                                    </div>
-                                    <div class="control-group"
-                                        data-help="Top-K strongest adjacency edges used in sparse pairwise constraints.">
-                                        <label for="pairwise-edge-limit">Pairwise edge limit</label>
-                                        <input type="number" id="pairwise-edge-limit" min="10" max="1000" step="10"
-                                            value="150">
-                                    </div>
-                                    <div class="control-group"
-                                        data-help="Nearest candidate cells considered per feature in pairwise constraints.">
-                                        <label for="pairwise-nearest-cells">Pairwise nearest cells</label>
-                                        <input type="number" id="pairwise-nearest-cells" min="2" max="20" step="1"
-                                            value="6">
-                                    </div>
-                                    <div class="control-group"
-                                        data-help="Strength of sparse pairwise adjacency reward terms.">
-                                        <label for="pairwise-weight">Pairwise weight</label>
-                                        <input type="number" id="pairwise-weight" min="0" max="3" step="0.1"
-                                            value="0.5">
+                                    <div id="pairwise-controls-wrap">
+                                        <div class="pairwise-note" id="pairwise-note"></div>
+                                        <div class="control-group"
+                                            data-help="Enable sparse pairwise feature adjacency rewards using the feature graph.">
+                                            <label for="pairwise-enabled">
+                                                <input type="checkbox" id="pairwise-enabled"> Enable sparse pairwise
+                                                adjacency
+                                            </label>
+                                        </div>
+                                        <div class="control-group"
+                                            data-help="Top-K strongest adjacency edges used in sparse pairwise constraints.">
+                                            <label for="pairwise-edge-limit">Pairwise edge limit</label>
+                                            <input type="number" id="pairwise-edge-limit" min="10" max="1000" step="10"
+                                                value="150">
+                                        </div>
+                                        <div class="control-group"
+                                            data-help="Nearest candidate cells considered per feature in pairwise constraints.">
+                                            <label for="pairwise-nearest-cells">Pairwise nearest cells</label>
+                                            <input type="number" id="pairwise-nearest-cells" min="2" max="20" step="1"
+                                                value="6">
+                                        </div>
+                                        <div class="control-group"
+                                            data-help="Strength of sparse pairwise adjacency reward terms.">
+                                            <label for="pairwise-weight">Pairwise weight</label>
+                                            <input type="number" id="pairwise-weight" min="0" max="3" step="0.1"
+                                                value="0.5">
+                                        </div>
                                     </div>
                                 </div>
 
@@ -227,6 +225,18 @@
                                     <div class="control-group" data-help="Number of simulated annealing iterations.">
                                         <label for="sa-iter">SA iterations</label>
                                         <input type="number" id="sa-iter" min="100" max="20000" step="100" value="2000">
+                                    </div>
+                                    <div class="control-group"
+                                        data-help="Run an adjacency-specific local improvement pass after swaps/SA.">
+                                        <label for="run-adj-fix">
+                                            <input type="checkbox" id="run-adj-fix"> Run adjacency fixer
+                                        </label>
+                                    </div>
+                                    <div class="control-group"
+                                        data-help="Maximum iterations for the adjacency-fixer local search.">
+                                        <label for="adj-fix-iter">Adjacency fix iterations</label>
+                                        <input type="number" id="adj-fix-iter" min="50" max="5000" step="50"
+                                            value="500">
                                     </div>
                                 </div>
                             </div>

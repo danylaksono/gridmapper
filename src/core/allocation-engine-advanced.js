@@ -54,12 +54,15 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
     const cellVars = {};  // cellId -> [varName, ...]
 
     // Initialize trackers
+    const isHardSpacer = (cellKey) => spacerMode === 'hard' && spacerSet.has(cellKey);
+
     normalizedPoints.forEach(p => pointVars[p.id] = []);
     for (let r = 0; r < gridRows; r++) {
         for (let c = 0; c < gridCols; c++) {
-            // Skip spacer cells entirely (treat as unavailable)
-            if (spacerSet.has(`${r}_${c}`)) continue;
-            cellVars[`${r}_${c}`] = [];
+            const cellId = `${r}_${c}`;
+            // In hard mode spacer cells are unavailable. In soft mode they remain available with a penalty.
+            if (isHardSpacer(cellId)) continue;
+            cellVars[cellId] = [];
         }
     }
 
@@ -67,8 +70,9 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
     normalizedPoints.forEach(p => {
         for (let r = 0; r < gridRows; r++) {
             for (let c = 0; c < gridCols; c++) {
-                // skip spacer cells
-                if (spacerSet.has(`${r}_${c}`)) continue;
+                const cellId = `${r}_${c}`;
+                // skip spacer cells only in hard mode
+                if (isHardSpacer(cellId)) continue;
                 const varName = `p${p.id}_r${r}_c${c}`;
                 
                 // Calculate grid center coordinates
@@ -98,13 +102,13 @@ export async function solveAdvancedAllocation(normalizedPoints, config) {
                 }
 
                 // If spacerMode is soft and this cell is a spacer, add mask penalty
-                if (spacerMode === 'soft' && spacerSet.has(`${r}_${c}`)) {
+                if (spacerMode === 'soft' && spacerSet.has(cellId)) {
                     objectiveTerms.push({ name: varName, coef: maskPenalty });
                 }
 
                 // Add to trackers
                 pointVars[p.id].push(varName);
-                cellVars[`${r}_${c}`].push(varName);
+                cellVars[cellId].push(varName);
                 
                 // Declare as binary integer (0 or 1)
                 solverBuilder.var(varName, Boolean);

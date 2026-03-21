@@ -107,7 +107,7 @@ export function postProcessSwaps(assignments, normPoints, rows, cols, cfg = {}) 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const k = cellKey(r, c);
-            if (spacerSet.has(k)) continue;
+            if (spacerMode === 'hard' && spacerSet.has(k)) continue;
             if (!currentOccSet.has(k)) freeCells.push([r, c]);
         }
     }
@@ -143,16 +143,18 @@ export function postProcessSwaps(assignments, normPoints, rows, cols, cfg = {}) 
                 const ai = assignments[i]; const aj = assignments[j];
                 const prev = computeTotal();
                 // apply swap
-                const tmpX = ai.gridX, tmpY = ai.gridY;
-                ai.gridX = aj.gridX; ai.gridY = aj.gridY;
-                aj.gridX = tmpX; aj.gridY = tmpY;
+                const oldAiX = ai.gridX, oldAiY = ai.gridY;
+                const oldAjX = aj.gridX, oldAjY = aj.gridY;
+                ai.gridX = oldAjX; ai.gridY = oldAjY;
+                aj.gridX = oldAiX; aj.gridY = oldAiY;
                 const post = computeTotal();
                 const delta = post - prev;
                 if (delta <= 0 || Math.exp(-delta / T) > Math.random()) {
                     if (post < bestCost) { bestCost = post; bestAssign = assignments.map(a => ({ ...a })); }
                 } else {
                     // revert
-                    aj.gridX = ai.gridX; aj.gridY = ai.gridY; // revert via stored tmp not ideal but acceptable rarely
+                    ai.gridX = oldAiX; ai.gridY = oldAiY;
+                    aj.gridX = oldAjX; aj.gridY = oldAjY;
                 }
             } else {
                 // pick random point and random free cell
