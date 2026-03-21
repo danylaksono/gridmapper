@@ -9,6 +9,7 @@ import { computePolygonCentroid } from './polygon-centroid.js';
 import { PCARotation } from '../features/pca-rotation.js';
 import { computeAdjacencyGraph } from './adjacency-graph.js';
 import { embedGraph } from './graph-embed.js';
+import { Delaunay } from 'd3-delaunay';
 
 /**
  * Estimate optimal parameters for grid allocation from GeoJSON data
@@ -22,6 +23,7 @@ export function estimateParameters(geojson, options = {}) {
     const {
         xAccessor = d => d.lon,
         yAccessor = d => d.lat,
+        enableDimensionSearch = true,
         // Optional: compute graph embedding for adjacency-based penalty
         computeEmbedding = false,
         embeddingOptions = {}
@@ -31,7 +33,7 @@ export function estimateParameters(geojson, options = {}) {
         throw new Error('GeoJSON must contain a features array with at least one feature');
     }
 
-    // 1. Extract centroids and bounding boxes
+    // 1. Extract centroids and geometry descriptors
     const extracted = geojson.features.map((feature, fi) => {
         const geometry = feature.geometry;
         let x, y;
@@ -69,10 +71,20 @@ export function estimateParameters(geojson, options = {}) {
             x = 0; y = 0;
         }
 
-        // Calculate feature bounds
+        // Calculate feature bounds + geometry descriptors
         const bounds = getFeatureBounds(feature);
+        const geomStats = getFeatureGeometryStats(feature);
         
-        return { id, x, y, bounds };
+        return {
+            id,
+            x,
+            y,
+            bounds,
+            geomArea: geomStats.area,
+            geomPerimeter: geomStats.perimeter,
+            circularity: geomStats.circularity,
+            holeArea: geomStats.holeArea
+        };
     });
 
     const points = extracted.map(d => ({ x: d.x, y: d.y }));
@@ -124,9 +136,13 @@ export function estimateParameters(geojson, options = {}) {
     rotatedGlobalBounds.width = rotatedGlobalBounds.maxX - rotatedGlobalBounds.minX;
     rotatedGlobalBounds.height = rotatedGlobalBounds.maxY - rotatedGlobalBounds.minY;
 
+    const directional = computeDirectionalIndicators(points, pcaAngle);
+    const geoIndicators = computeGeoIndicators(extracted, geojson.features);
+
     // Decision logic
     const areaOriginal = globalBounds.width * globalBounds.height;
     const areaRotated = rotatedGlobalBounds.width * rotatedGlobalBounds.height;
+    const areaGain = areaOriginal / Math.max(areaRotated, 1e-9);
     
     const aspectOriginal = Math.max(globalBounds.width, globalBounds.height) / Math.min(globalBounds.width, globalBounds.height);
     const aspectRotated = Math.max(rotatedGlobalBounds.width, rotatedGlobalBounds.height) / Math.min(rotatedGlobalBounds.width, rotatedGlobalBounds.height);
@@ -158,28 +174,61 @@ export function estimateParameters(geojson, options = {}) {
         rotateByPCA = true;
     }
 
+    // Keep diagonal mental-map orientation for strongly linear chains unless PCA gives
+    // a very large packing improvement. This helps Japan/Chile-like geographies.
+    const diagonalChain = directional.linearity > 0.52 &&
+        directional.diagonality > 0.55 &&
+        pointsAspectRotated > 2.2;
+
+    if (rotateByPCA && diagonalChain && areaGain < 2.2) {
+        rotateByPCA = false;
+    }
+
     // 3. Grid Dimensions
     const activeBounds = rotateByPCA ? rotatedPointsBounds : pointsBounds;
-    const rawRatio = activeBounds.height / Math.max(activeBounds.width, 1e-9);
-    const elongation = Math.max(activeBounds.width, activeBounds.height) /
+    const intrinsicRatio = rotatedPointsBounds.height / Math.max(rotatedPointsBounds.width, 1e-9);
+    let rawRatio = activeBounds.height / Math.max(activeBounds.width, 1e-9);
+    const intrinsicElongation = Math.max(rotatedPointsBounds.width, rotatedPointsBounds.height) /
+        Math.max(1e-9, Math.min(rotatedPointsBounds.width, rotatedPointsBounds.height));
+    let elongation = Math.max(activeBounds.width, activeBounds.height) /
         Math.max(1e-9, Math.min(activeBounds.width, activeBounds.height));
+
+    // If we preserve diagonal orientation (no PCA rotation), still let dimensions reflect
+    // the intrinsic chain-like spread measured in PCA space.
+    if (!rotateByPCA && diagonalChain) {
+        rawRatio = Math.min(rawRatio, intrinsicRatio * 1.05);
+        elongation = Math.max(elongation, intrinsicElongation);
+    }
 
     const slackBase = rotateByPCA ? 0.55 : 0.35;
     const maxSlack = rotateByPCA ? 1.6 : 1.0;
     const slack = Math.min(maxSlack, Math.max(0, (elongation - 1.3) * slackBase));
 
     const mapArea = Math.max(globalBounds.width * globalBounds.height, 1e-9);
-    const totalFeatureArea = extracted.reduce((sum, d) => sum + d.bounds.area, 0);
+    const totalFeatureArea = extracted.reduce((sum, d) => sum + (d.geomArea || d.bounds.area), 0);
     const coverageRatio = Math.min(1, totalFeatureArea / mapArea);
     const coverageBoost = Math.max(0, coverageRatio - 0.35);
+    const featureCircularityMedian = median(
+        extracted
+            .map(d => d.circularity)
+            .filter(v => Number.isFinite(v) && v > 0)
+    );
+    const holeRatio = geoIndicators.holeRatio;
+    const occupancyRatio = geoIndicators.occupancyRatio;
+    const componentCount = geoIndicators.componentCount;
+    const componentPenalty = Math.max(0, componentCount - 1) / Math.max(1, Math.sqrt(points.length));
+    const sparsityIndex = geoIndicators.sparsityIndex;
 
     // Adaptively soften the aspect ratio. Highly elongated maps should keep their shape,
     // while dense compact maps can be nudged toward a squarer starter grid.
     const rawLogRatio = Math.log(Math.max(rawRatio, 1e-9));
     let logCompression = rotateByPCA ? 0.85 : 0.75;
+    if (!rotateByPCA && diagonalChain) logCompression = 0.96;
     if (elongation > 2.2) logCompression += 0.08;
     if (elongation > 3.5) logCompression += 0.05;
     if (coverageRatio > 0.55 && points.length < 90) logCompression -= 0.08;
+    if (sparsityIndex > 0.45) logCompression += 0.04;
+    if (holeRatio > 0.1) logCompression += 0.03;
     logCompression = Math.max(0.65, Math.min(0.98, logCompression));
 
     let ratioOverride = Math.exp(rawLogRatio * logCompression);
@@ -193,14 +242,31 @@ export function estimateParameters(geojson, options = {}) {
         ratioOverride = ratioOverride * 0.7 + 0.3 * 0.85;
     }
 
-    const adjacencyStats = computeAdjacencyStats(extracted);
+    if (!diagonalChain && !rotateByPCA && coverageRatio > 0.32 && elongation < 1.8) {
+        ratioOverride = ratioOverride * 0.55 + 0.45 * 0.9;
+    }
+
+    const adjacencyStats = geoIndicators.adjacencyStats;
     // Reduce adjacency influence (very connected boroughs should not blow up cols)
     let adjacencyBoost = Math.max(0, (adjacencyStats.averageDegree || 0) - 2.5) * 0.1;
     if (elongation > 2.2) adjacencyBoost *= 0.6;
     if (coverageRatio < 0.3) adjacencyBoost *= 0.7;
+    if (featureCircularityMedian > 0.45) adjacencyBoost *= 0.85;
     const densityBoost = coverageBoost + adjacencyBoost;
+    const sparseBoost = Math.max(0, sparsityIndex - 0.35);
+    const occupancyBoost = Math.max(0, 0.32 - occupancyRatio);
 
-    const targetCells = Math.ceil(points.length * (1 + slack + densityBoost * 0.45));
+    let targetCells = Math.ceil(points.length * (1 + slack + densityBoost * 0.45));
+    targetCells = Math.ceil(targetCells * (1 + sparseBoost * 0.35 + occupancyBoost * 0.25 + componentPenalty * 0.4 + holeRatio * 0.2));
+
+    // Compact contiguous datasets tend to be over-expanded; trim budget slightly.
+    if (coverageRatio > 0.45 && elongation < 1.8 && featureCircularityMedian > 0.35) {
+        targetCells = Math.max(points.length, Math.ceil(targetCells * 0.96));
+    }
+
+    if (!diagonalChain && !rotateByPCA && directional.diagonality < 0.35 && coverageRatio > 0.22 && elongation < 1.9) {
+        targetCells = Math.max(points.length, Math.ceil(targetCells * 0.92));
+    }
 
     const elongationBoost = Math.max(0, Math.log2(Math.max(elongation, 1))); // 0 when elongation <=1
     const sqrtN = Math.sqrt(points.length);
@@ -213,17 +279,50 @@ export function estimateParameters(geojson, options = {}) {
     const maxColsCap = Math.max(3, Math.ceil(sqrtN * 3));
     minCols = Math.min(minCols, maxColsCap);
 
-    const { rows, cols } = calculateAutoDimensions(points.length, activeBounds, {
+    let { rows, cols } = calculateAutoDimensions(points.length, activeBounds, {
         aspectRatio: ratioOverride,
         targetCellCount: targetCells,
         minRows,
         minCols
     });
 
+    // Rebalance compact contiguous maps toward less skewed grids.
+    if (!diagonalChain && !rotateByPCA && coverageRatio > 0.5 && elongation < 2.5) {
+        while (
+            (cols - rows) > 1 &&
+            ((rows + 1) * (cols - 1)) >= points.length
+        ) {
+            rows += 1;
+            cols -= 1;
+        }
+    }
+
+    if (enableDimensionSearch) {
+        const refined = refineDimensionsWithCandidateSearch({
+            baseRows: rows,
+            baseCols: cols,
+            n: points.length,
+            targetCells,
+            targetAspect: ratioOverride,
+            minRows,
+            minCols,
+            diagonalChain,
+            coverageRatio,
+            sparsityIndex,
+            elongation
+        });
+        rows = refined.rows;
+        cols = refined.cols;
+    }
+
     // 4. Compactness Estimation
     const compactness = estimateCompactnessAdvanced(extracted, globalBounds, {
         useAdjacency: true,
-        adjacencyStats
+        adjacencyStats,
+        holeRatio,
+        sparsityIndex,
+        occupancyRatio,
+        componentCount
     });
 
     const result = {
@@ -296,6 +395,470 @@ function getFeatureBounds(feature) {
     };
 }
 
+function getFeatureGeometryStats(feature) {
+    const geometry = feature?.geometry;
+    if (!geometry) {
+        return { area: 0, perimeter: 0, circularity: 0 };
+    }
+
+    if (geometry.type === 'Polygon') {
+        const stats = polygonStats(geometry.coordinates);
+        return {
+            area: stats.area,
+            perimeter: stats.perimeter,
+            circularity: stats.circularity,
+            holeArea: stats.holeArea
+        };
+    }
+
+    if (geometry.type === 'MultiPolygon') {
+        let area = 0;
+        let perimeter = 0;
+        let holeArea = 0;
+        geometry.coordinates.forEach(polygon => {
+            const stats = polygonStats(polygon);
+            area += stats.area;
+            perimeter += stats.perimeter;
+            holeArea += stats.holeArea;
+        });
+        const circularity = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
+        return { area, perimeter, circularity, holeArea };
+    }
+
+    return { area: 0, perimeter: 0, circularity: 0, holeArea: 0 };
+}
+
+function polygonStats(rings) {
+    if (!Array.isArray(rings) || rings.length === 0) {
+        return { area: 0, perimeter: 0, circularity: 0, holeArea: 0 };
+    }
+
+    let area = 0;
+    let perimeter = 0;
+    let holeArea = 0;
+
+    rings.forEach((ring, idx) => {
+        const signedArea = ringSignedArea(ring);
+        const ringArea = Math.abs(signedArea);
+        const ringPerimeter = ringLength(ring);
+
+        // GeoJSON Polygon: ring[0] shell, subsequent rings are holes.
+        if (idx === 0) {
+            area += ringArea;
+        } else {
+            area -= ringArea;
+            holeArea += ringArea;
+        }
+        perimeter += ringPerimeter;
+    });
+
+    area = Math.max(0, area);
+    const circularity = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : 0;
+    return {
+        area,
+        perimeter,
+        circularity: Math.max(0, Math.min(1, circularity)),
+        holeArea: Math.max(0, holeArea)
+    };
+}
+
+function ringSignedArea(ring) {
+    if (!Array.isArray(ring) || ring.length < 3) return 0;
+    let sum = 0;
+    for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        sum += (a[0] * b[1]) - (b[0] * a[1]);
+    }
+    return Math.abs(sum) * 0.5;
+}
+
+function ringLength(ring) {
+    if (!Array.isArray(ring) || ring.length < 2) return 0;
+    let len = 0;
+    for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        len += Math.sqrt(dx * dx + dy * dy);
+    }
+    return len;
+}
+
+function computeDirectionalIndicators(points, pcaAngle) {
+    if (!points || points.length < 2) {
+        return { linearity: 0, diagonality: 0 };
+    }
+
+    const meanX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+    const meanY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+
+    let cxx = 0;
+    let cyy = 0;
+    let cxy = 0;
+
+    points.forEach(p => {
+        const dx = p.x - meanX;
+        const dy = p.y - meanY;
+        cxx += dx * dx;
+        cyy += dy * dy;
+        cxy += dx * dy;
+    });
+
+    cxx /= points.length;
+    cyy /= points.length;
+    cxy /= points.length;
+
+    const trace = cxx + cyy;
+    const det = cxx * cyy - cxy * cxy;
+    const disc = Math.sqrt(Math.max(0, trace * trace * 0.25 - det));
+    const lambda1 = trace * 0.5 + disc;
+    const lambda2 = trace * 0.5 - disc;
+    const linearity = (lambda1 + lambda2) > 1e-9 ? (lambda1 - lambda2) / (lambda1 + lambda2) : 0;
+
+    const axisAngle = normalizeToHalfPi(Math.abs(pcaAngle));
+    const axisDist = Math.min(axisAngle, Math.abs((Math.PI / 2) - axisAngle));
+    const diagonality = Math.sin(axisDist * 2);
+
+    return {
+        linearity: Math.max(0, Math.min(1, linearity)),
+        diagonality: Math.max(0, Math.min(1, diagonality))
+    };
+}
+
+function normalizeToHalfPi(angle) {
+    let a = angle % Math.PI;
+    if (a < 0) a += Math.PI;
+    if (a > Math.PI / 2) a = Math.PI - a;
+    return a;
+}
+
+function median(values) {
+    if (!values || values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    return sorted[mid];
+}
+
+function refineDimensionsWithCandidateSearch(params) {
+    const {
+        baseRows,
+        baseCols,
+        n,
+        targetCells,
+        targetAspect,
+        minRows,
+        minCols,
+        diagonalChain,
+        coverageRatio,
+        sparsityIndex,
+        elongation
+    } = params;
+
+    const candidates = generateDimensionCandidates({
+        baseRows,
+        baseCols,
+        n,
+        targetCells,
+        targetAspect,
+        minRows,
+        minCols
+    });
+
+    const compactMap = coverageRatio > 0.48 && elongation < 2.4 && !diagonalChain;
+    const sparseMap = sparsityIndex > 0.32;
+
+    let best = { rows: baseRows, cols: baseCols };
+    let bestScore = scoreDimensionCandidate(best, {
+        targetCells,
+        targetAspect,
+        n,
+        compactMap,
+        diagonalChain,
+        sparseMap
+    });
+
+    candidates.forEach(candidate => {
+        const score = scoreDimensionCandidate(candidate, {
+            targetCells,
+            targetAspect,
+            n,
+            compactMap,
+            diagonalChain,
+            sparseMap
+        });
+        if (score < bestScore) {
+            bestScore = score;
+            best = candidate;
+        }
+    });
+
+    return best;
+}
+
+function generateDimensionCandidates(params) {
+    const {
+        baseRows,
+        baseCols,
+        n,
+        targetCells,
+        targetAspect,
+        minRows,
+        minCols
+    } = params;
+
+    const set = new Map();
+    const add = (rows, cols) => {
+        if (!Number.isFinite(rows) || !Number.isFinite(cols)) return;
+        rows = Math.max(minRows, Math.round(rows));
+        cols = Math.max(minCols, Math.round(cols));
+        if (rows < 1 || cols < 1) return;
+        if (rows * cols < n) return;
+        const key = `${rows}x${cols}`;
+        if (!set.has(key)) {
+            set.set(key, { rows, cols });
+        }
+    };
+
+    add(baseRows, baseCols);
+
+    for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            add(baseRows + dr, baseCols + dc);
+        }
+    }
+
+    const safeAspect = Math.max(1e-6, targetAspect);
+    const colsFromAspect = Math.max(minCols, Math.round(Math.sqrt(Math.max(targetCells, n) / safeAspect)));
+    const rowsFromAspect = Math.max(minRows, Math.ceil(Math.max(targetCells, n) / colsFromAspect));
+    add(rowsFromAspect, colsFromAspect);
+    add(rowsFromAspect - 1, colsFromAspect + 1);
+    add(rowsFromAspect + 1, colsFromAspect - 1);
+    add(rowsFromAspect + 1, colsFromAspect + 1);
+
+    return Array.from(set.values());
+}
+
+function scoreDimensionCandidate(candidate, params) {
+    const {
+        targetCells,
+        targetAspect,
+        n,
+        compactMap,
+        diagonalChain,
+        sparseMap
+    } = params;
+
+    const rows = candidate.rows;
+    const cols = candidate.cols;
+    const cells = rows * cols;
+    const ratio = rows / Math.max(cols, 1e-9);
+    const safeTargetAspect = Math.max(1e-9, targetAspect);
+
+    const aspectError = Math.abs(Math.log(Math.max(ratio, 1e-9) / safeTargetAspect));
+    const cellError = Math.abs(cells - targetCells) / Math.max(1, targetCells);
+    const excessCells = Math.max(0, cells - targetCells) / Math.max(1, targetCells);
+    const imbalance = Math.abs(cols - rows) / Math.max(1, Math.sqrt(n));
+
+    let score = 0;
+    score += aspectError * 0.6;
+    score += cellError * 0.28;
+    score += excessCells * 0.12;
+
+    if (compactMap) {
+        score += Math.max(0, imbalance - 0.35) * 0.35;
+    }
+
+    if (diagonalChain) {
+        const chainPenalty = Math.max(0, ratio - Math.min(0.75, safeTargetAspect * 1.25));
+        score += chainPenalty * 0.8;
+    }
+
+    if (sparseMap) {
+        score += Math.max(0, ratio - 0.78) * 0.3;
+    }
+
+    return score;
+}
+
+function computeGeoIndicators(extractedData, features) {
+    const points = extractedData.map(d => ({ x: d.x, y: d.y }));
+    const adjacencyStats = computeHybridAdjacencyStats(extractedData, features, points);
+
+    const totalFeatureArea = extractedData.reduce((sum, d) => sum + (d.geomArea || 0), 0);
+    const totalHoleArea = extractedData.reduce((sum, d) => sum + (d.holeArea || 0), 0);
+    const hullArea = computeConvexHullArea(points);
+
+    const occupancyRatio = hullArea > 1e-9 ? Math.min(1, totalFeatureArea / hullArea) : 1;
+    const holeRatio = totalFeatureArea > 1e-9 ? Math.min(0.95, totalHoleArea / totalFeatureArea) : 0;
+    const componentCount = Math.max(1, adjacencyStats.topologyComponents || 1);
+
+    const sparsityIndex = Math.max(
+        0,
+        Math.min(
+            1,
+            0.5 * (1 - occupancyRatio) +
+            0.25 * Math.min(1, holeRatio * 3) +
+            0.25 * Math.min(1, (componentCount - 1) / Math.max(1, Math.sqrt(points.length)))
+        )
+    );
+
+    return {
+        adjacencyStats,
+        holeRatio,
+        occupancyRatio,
+        componentCount,
+        sparsityIndex
+    };
+}
+
+function computeHybridAdjacencyStats(extractedData, features, points) {
+    const n = extractedData.length;
+    if (n < 2) return { averageDegree: 0, maxDegree: 0, topologyComponents: 1 };
+
+    const idToIndex = new Map();
+    extractedData.forEach((d, i) => idToIndex.set(String(d.id), i));
+
+    const topology = computeAdjacencyGraph(features, { bufferFraction: 0.015 });
+    const edgeSet = new Set();
+    const degrees = new Array(n).fill(0);
+
+    const addEdge = (a, b) => {
+        if (a === b) return;
+        const i = Math.min(a, b);
+        const j = Math.max(a, b);
+        const key = `${i}|${j}`;
+        if (edgeSet.has(key)) return;
+        edgeSet.add(key);
+        degrees[i] += 1;
+        degrees[j] += 1;
+    };
+
+    topology.edges.forEach(edge => {
+        const i = edge.i ?? idToIndex.get(String(edge.source));
+        const j = edge.j ?? idToIndex.get(String(edge.target));
+        if (Number.isInteger(i) && Number.isInteger(j)) {
+            addEdge(i, j);
+        }
+    });
+
+    // Add Delaunay proximity edges as soft neighborhood links.
+    if (points.length >= 3) {
+        const delaunay = Delaunay.from(points, p => p.x, p => p.y);
+        const lengths = [];
+        const candidateEdges = [];
+
+        for (let i = 0; i < points.length; i++) {
+            for (const j of delaunay.neighbors(i)) {
+                if (j <= i) continue;
+                const dx = points[i].x - points[j].x;
+                const dy = points[i].y - points[j].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                lengths.push(dist);
+                candidateEdges.push({ i, j, dist });
+            }
+        }
+
+        const medianLen = median(lengths);
+        const maxKeep = Math.max(1e-9, medianLen * 2.2);
+        candidateEdges
+            .filter(edge => edge.dist <= maxKeep)
+            .forEach(edge => addEdge(edge.i, edge.j));
+    }
+
+    const totalDegree = degrees.reduce((sum, d) => sum + d, 0);
+    const maxDegree = Math.max(...degrees);
+    const topologyComponents = countGraphComponents(n, topology.edges, idToIndex);
+
+    return {
+        averageDegree: totalDegree / n,
+        maxDegree,
+        topologyComponents
+    };
+}
+
+function countGraphComponents(n, edges, idToIndex) {
+    if (n <= 0) return 0;
+    const neighbors = Array.from({ length: n }, () => []);
+
+    edges.forEach(edge => {
+        const i = edge.i ?? idToIndex.get(String(edge.source));
+        const j = edge.j ?? idToIndex.get(String(edge.target));
+        if (!Number.isInteger(i) || !Number.isInteger(j) || i === j) return;
+        neighbors[i].push(j);
+        neighbors[j].push(i);
+    });
+
+    const seen = new Array(n).fill(false);
+    let components = 0;
+
+    for (let i = 0; i < n; i++) {
+        if (seen[i]) continue;
+        components += 1;
+        const stack = [i];
+        seen[i] = true;
+        while (stack.length > 0) {
+            const node = stack.pop();
+            neighbors[node].forEach(next => {
+                if (!seen[next]) {
+                    seen[next] = true;
+                    stack.push(next);
+                }
+            });
+        }
+    }
+
+    return components;
+}
+
+function computeConvexHullArea(points) {
+    if (!points || points.length < 3) return 0;
+    const hull = convexHull(points);
+    if (!hull || hull.length < 3) return 0;
+
+    let area2 = 0;
+    for (let i = 0; i < hull.length; i++) {
+        const a = hull[i];
+        const b = hull[(i + 1) % hull.length];
+        area2 += a.x * b.y - b.x * a.y;
+    }
+
+    return Math.abs(area2) * 0.5;
+}
+
+function convexHull(points) {
+    const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.y - b.y));
+    if (sorted.length <= 1) return sorted;
+
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+    const lower = [];
+    sorted.forEach(p => {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+            lower.pop();
+        }
+        lower.push(p);
+    });
+
+    const upper = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+        const p = sorted[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+            upper.pop();
+        }
+        upper.push(p);
+    }
+
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+}
+
 /**
  * Advanced Compactness Estimation
  */
@@ -331,8 +894,12 @@ function estimateCompactnessAdvanced(extractedData, bounds, options = {}) {
 
     // 2. Coverage Ratio
     // How much of the bounding box is covered by feature bboxes?
-    const totalFeatureArea = extractedData.reduce((sum, d) => sum + d.bounds.area, 0);
+    const totalFeatureArea = extractedData.reduce((sum, d) => sum + (d.geomArea || d.bounds.area), 0);
     const coverageRatio = Math.min(1, totalFeatureArea / totalArea);
+    const holeRatio = options.holeRatio ?? 0;
+    const sparsityIndex = options.sparsityIndex ?? 0;
+    const occupancyRatio = options.occupancyRatio ?? 1;
+    const componentCount = options.componentCount ?? 1;
 
     // Base compactness — bias slightly upward for administrative/contiguous regions
     let compactness = 0.55;
@@ -351,15 +918,34 @@ function estimateCompactnessAdvanced(extractedData, bounds, options = {}) {
         compactness += 0.05;
     }
 
+    // Sparse / holed / multi-component geographies should preserve positional structure more.
+    if (sparsityIndex > 0.45) {
+        compactness -= 0.07;
+    } else if (sparsityIndex > 0.3) {
+        compactness -= 0.04;
+    }
+
+    if (holeRatio > 0.12) {
+        compactness -= 0.04;
+    }
+
+    if (occupancyRatio < 0.32) {
+        compactness -= 0.03;
+    }
+
+    if (componentCount > 1) {
+        compactness -= Math.min(0.06, (componentCount - 1) * 0.015);
+    }
+
     // 3. Adjacency (Topology)
     if (options.useAdjacency) {
         const stats = options.adjacencyStats || computeAdjacencyStats(extractedData);
         const averageDegree = stats?.averageDegree ?? 0;
         
-        if (averageDegree > 3.5) {
+        if (averageDegree > 4.0) {
             compactness += 0.02;
         } else if (averageDegree < 1.5) {
-            compactness += 0.03;
+            compactness += 0.01;
         }
     }
 
