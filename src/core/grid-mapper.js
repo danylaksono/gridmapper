@@ -128,7 +128,8 @@ export class GridMapper {
         let workingPoints = points.map(p => ({ ...p }));
         if (rotateByPCA) {
             const rotation = PCARotation.computeAngle(workingPoints);
-            workingPoints = PCARotation.rotate(workingPoints, rotation);
+            // Use the same rotation direction as the estimator's PCA evaluation.
+            workingPoints = PCARotation.rotate(workingPoints, -rotation);
         }
 
         // Compute spacers (either provided or auto-compute from geometry)

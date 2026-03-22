@@ -9,7 +9,6 @@ import { computePolygonCentroid } from './polygon-centroid.js';
 import { PCARotation } from '../features/pca-rotation.js';
 import { computeAdjacencyGraph } from './adjacency-graph.js';
 import { embedGraph } from './graph-embed.js';
-import { Delaunay } from 'd3-delaunay';
 
 /**
  * Estimate optimal parameters for grid allocation from GeoJSON data
@@ -143,6 +142,9 @@ export function estimateParameters(geojson, options = {}) {
     const areaOriginal = globalBounds.width * globalBounds.height;
     const areaRotated = rotatedGlobalBounds.width * rotatedGlobalBounds.height;
     const areaGain = areaOriginal / Math.max(areaRotated, 1e-9);
+    const pointsAreaGain =
+        (pointsBounds.width * pointsBounds.height) /
+        Math.max(rotatedPointsBounds.width * rotatedPointsBounds.height, 1e-9);
     
     const aspectOriginal = Math.max(globalBounds.width, globalBounds.height) / Math.min(globalBounds.width, globalBounds.height);
     const aspectRotated = Math.max(rotatedGlobalBounds.width, rotatedGlobalBounds.height) / Math.min(rotatedGlobalBounds.width, rotatedGlobalBounds.height);
@@ -180,7 +182,7 @@ export function estimateParameters(geojson, options = {}) {
         directional.diagonality > 0.55 &&
         pointsAspectRotated > 2.2;
 
-    if (rotateByPCA && diagonalChain && areaGain < 2.2) {
+    if (rotateByPCA && diagonalChain && pointsAreaGain < 1.1) {
         rotateByPCA = false;
     }
 
@@ -747,25 +749,14 @@ function computeHybridAdjacencyStats(extractedData, features, points) {
         }
     });
 
-    // Add Delaunay proximity edges as soft neighborhood links.
+    // Add proximity edges as soft neighborhood links (Delaunay-like fallback
+    // based on mutual nearest neighbors + distance pruning).
     if (points.length >= 3) {
-        const delaunay = Delaunay.from(points, p => p.x, p => p.y);
-        const lengths = [];
-        const candidateEdges = [];
-
-        for (let i = 0; i < points.length; i++) {
-            for (const j of delaunay.neighbors(i)) {
-                if (j <= i) continue;
-                const dx = points[i].x - points[j].x;
-                const dy = points[i].y - points[j].y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                lengths.push(dist);
-                candidateEdges.push({ i, j, dist });
-            }
-        }
-
+        const candidateEdges = buildProximityEdges(points, 4);
+        const lengths = candidateEdges.map(edge => edge.dist);
         const medianLen = median(lengths);
         const maxKeep = Math.max(1e-9, medianLen * 2.2);
+
         candidateEdges
             .filter(edge => edge.dist <= maxKeep)
             .forEach(edge => addEdge(edge.i, edge.j));
@@ -829,6 +820,50 @@ function computeConvexHullArea(points) {
     }
 
     return Math.abs(area2) * 0.5;
+}
+
+function buildProximityEdges(points, k = 4) {
+    const n = points.length;
+    if (n < 2) return [];
+
+    const neighborLists = Array.from({ length: n }, () => []);
+
+    for (let i = 0; i < n; i++) {
+        const distances = [];
+        for (let j = 0; j < n; j++) {
+            if (i === j) continue;
+            const dx = points[i].x - points[j].x;
+            const dy = points[i].y - points[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            distances.push({ j, dist });
+        }
+
+        distances.sort((a, b) => a.dist - b.dist);
+        neighborLists[i] = distances.slice(0, Math.max(1, Math.min(k, n - 1)));
+    }
+
+    const edgeMap = new Map();
+    const addCandidate = (i, j, dist) => {
+        const a = Math.min(i, j);
+        const b = Math.max(i, j);
+        const key = `${a}|${b}`;
+        const prev = edgeMap.get(key);
+        if (!prev || dist < prev.dist) {
+            edgeMap.set(key, { i: a, j: b, dist });
+        }
+    };
+
+    for (let i = 0; i < n; i++) {
+        neighborLists[i].forEach(({ j, dist }) => {
+            addCandidate(i, j, dist);
+
+            // Prefer mutual-neighbor links (closer to planar local neighborhoods).
+            const reciprocal = neighborLists[j].some(entry => entry.j === i);
+            if (reciprocal) addCandidate(i, j, dist);
+        });
+    }
+
+    return Array.from(edgeMap.values());
 }
 
 function convexHull(points) {
