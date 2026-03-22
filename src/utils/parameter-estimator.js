@@ -318,7 +318,7 @@ export function estimateParameters(geojson, options = {}) {
     }
 
     // 4. Compactness Estimation
-    const compactness = estimateCompactnessAdvanced(extracted, globalBounds, {
+    let compactness = estimateCompactnessAdvanced(extracted, globalBounds, {
         useAdjacency: true,
         adjacencyStats,
         holeRatio,
@@ -326,6 +326,19 @@ export function estimateParameters(geojson, options = {}) {
         occupancyRatio,
         componentCount
     });
+
+    // Sparse diagonal chains tend to clump when compactness is too high.
+    // Apply a conservative correction toward the empirically stable ~0.5 region.
+    if (rotateByPCA && diagonalChain) {
+        compactness -= 0.10;
+    }
+    if (sparsityIndex > 0.25 && elongation > 2.4) {
+        compactness -= 0.03;
+    }
+    if (coverageRatio < 0.2) {
+        compactness -= 0.02;
+    }
+    compactness = Math.max(0.4, Math.min(0.8, compactness));
 
     const result = {
         rows,
@@ -573,6 +586,7 @@ function refineDimensionsWithCandidateSearch(params) {
 
     const compactMap = coverageRatio > 0.48 && elongation < 2.4 && !diagonalChain;
     const sparseMap = sparsityIndex > 0.32;
+    const chainLike = diagonalChain;
 
     let best = { rows: baseRows, cols: baseCols };
     let bestScore = scoreDimensionCandidate(best, {
@@ -581,7 +595,10 @@ function refineDimensionsWithCandidateSearch(params) {
         n,
         compactMap,
         diagonalChain,
-        sparseMap
+        sparseMap,
+        chainLike,
+        elongation,
+        sparsityIndex
     });
 
     candidates.forEach(candidate => {
@@ -591,7 +608,10 @@ function refineDimensionsWithCandidateSearch(params) {
             n,
             compactMap,
             diagonalChain,
-            sparseMap
+            sparseMap,
+            chainLike,
+            elongation,
+            sparsityIndex
         });
         if (score < bestScore) {
             bestScore = score;
@@ -653,7 +673,10 @@ function scoreDimensionCandidate(candidate, params) {
         n,
         compactMap,
         diagonalChain,
-        sparseMap
+        sparseMap,
+        chainLike,
+        elongation,
+        sparsityIndex
     } = params;
 
     const rows = candidate.rows;
@@ -666,6 +689,9 @@ function scoreDimensionCandidate(candidate, params) {
     const cellError = Math.abs(cells - targetCells) / Math.max(1, targetCells);
     const excessCells = Math.max(0, cells - targetCells) / Math.max(1, targetCells);
     const imbalance = Math.abs(cols - rows) / Math.max(1, Math.sqrt(n));
+    const longAxisCells = Math.max(rows, cols);
+    const lanes = Math.max(1, Math.min(rows, cols));
+    const laneDensity = n / Math.max(1, longAxisCells);
 
     let score = 0;
     score += aspectError * 0.6;
@@ -683,6 +709,23 @@ function scoreDimensionCandidate(candidate, params) {
 
     if (sparseMap) {
         score += Math.max(0, ratio - 0.78) * 0.3;
+    }
+
+    if (chainLike) {
+        const elongBoost = Math.max(0, Math.log2(Math.max(elongation, 1)));
+        const spreadTarget = Math.sqrt(Math.max(n, 1)) * (1.35 + 0.35 * elongBoost + 0.25 * Math.max(0, sparsityIndex - 0.25));
+        const spreadDeficit = Math.max(0, spreadTarget - longAxisCells) / Math.max(1, spreadTarget);
+        score += spreadDeficit * 0.9;
+
+        // Too many features per long-axis slot implies clumping into short lanes.
+        const laneDensityTarget = 3.2 - Math.min(1.2, elongBoost * 0.35);
+        const laneClumpPenalty = Math.max(0, laneDensity - laneDensityTarget) / Math.max(1, laneDensityTarget);
+        score += laneClumpPenalty * 0.6;
+
+        // Avoid overly tall/square outcomes for chain maps unless explicitly required by aspect.
+        if (!diagonalChain) {
+            score += Math.max(0, ratio - 0.9) * 0.35;
+        }
     }
 
     return score;
