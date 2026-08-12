@@ -430,7 +430,7 @@ directly comparable) and `-zoom` variants. Metric: `scripts/measure-geography.js
 ### What was added
 
 - `src/hierarchy/mosaic-allocator.js` — `allocateMosaicHierarchical(features,
-  options)`. The parent level (e.g. kecamatan) is laid out as a value-scaled
+options)`. The parent level (e.g. kecamatan) is laid out as a value-scaled
   mosaic and the finest features (villages) are packed inside each shape.
   - **`shapeType: 'rect'`** — rectangular mosaic via the exact-cell treemap
     (area ∝ value, geography-aware). Default.
@@ -447,11 +447,11 @@ directly comparable) and `-zoom` variants. Metric: `scripts/measure-geography.js
 
 ### Measured results
 
-| shapeType | leaves | shapes | time | containment |
-|---|---:|---:|---:|---:|
-| rect   | 83,518 | 7,276 | ~16.9 s | 83,518/83,518 ✓ |
-| circle | 10,000 | 1,237 | ~11.5 s | 10,000/10,000 ✓ |
-| hex    | 10,000 | 1,237 | ~11.2 s | 10,000/10,000 ✓ |
+| shapeType | leaves | shapes |    time |     containment |
+| --------- | -----: | -----: | ------: | --------------: |
+| rect      | 83,518 |  7,276 | ~16.9 s | 83,518/83,518 ✓ |
+| circle    | 10,000 |  1,237 | ~11.5 s | 10,000/10,000 ✓ |
+| hex       | 10,000 |  1,237 | ~11.2 s | 10,000/10,000 ✓ |
 
 Containment is guaranteed by construction (local grid inscribed in each shape,
 or the shape mask excludes out-of-polygon cells) and validated point-in-polygon.
@@ -467,10 +467,11 @@ or the shape mask excludes out-of-polygon cells) and validated point-in-polygon.
 
 ```js
 const result = await allocateMosaicHierarchical(villages, {
-  levels: ['provinsi_code', 'kab_kota_code', 'kecamatan_code'],
-  shapeType: 'circle',            // 'rect' | 'circle' | 'hex'
-  weightOf: d => d.population,    // scale shape area by population
-  xAccessor: d => d.x, yAccessor: d => d.y,
+  levels: ["provinsi_code", "kab_kota_code", "kecamatan_code"],
+  shapeType: "circle", // 'rect' | 'circle' | 'hex'
+  weightOf: (d) => d.population, // scale shape area by population
+  xAccessor: (d) => d.x,
+  yAccessor: (d) => d.y,
   mip: () => new GLPKSolver(glpk),
   seed: 1,
 });
@@ -490,15 +491,16 @@ Visuals: `demo/mosaic-rect.svg` (full 83k), `demo/mosaic-circle.svg`,
 
 The initial layouts did **not** preserve inter-island separation for an
 archipelago like Indonesia:
-- the **rect/treemap** mosaic *tiles the grid completely*, so two islands (e.g.
+
+- the **rect/treemap** mosaic _tiles the grid completely_, so two islands (e.g.
   Java and Sumatra) became adjacent rectangles sharing a hard edge — no "sea";
-- the **Dorling** layout only pushed circles apart until they *touched*
+- the **Dorling** layout only pushed circles apart until they _touched_
   (non-overlapping but tangent) — again no water gap.
 
 ### What was added
 
 - `src/hierarchy/islands.js` — `detectIslands(nodes, { positionOf,
-  islandAccessor?, seaGapKm? })`. Explicit island ids via `islandAccessor`, or
+islandAccessor?, seaGapKm? })`. Explicit island ids via `islandAccessor`, or
   automatic union-find over nodes whose geodesic distance < `seaGapKm`
   (spatial-binned, near-linear). Narrow straits will merge unless `seaGapKm`
   is small or an explicit accessor is supplied.
@@ -514,11 +516,11 @@ archipelago like Indonesia:
 
 ### Measured effect (6,000 villages, auto-detected 4 islands)
 
-| shapeType | metric | OFF | ON |
-|---|---|---|---|
-| circle | overlapping cross-island pairs | 188 | **0** |
-| circle | min center-dist / Σr | 0.971 | **1.369** |
-| rect | edge-adjacent cross-island blocks | 62 | **0** |
+| shapeType | metric                            | OFF   | ON        |
+| --------- | --------------------------------- | ----- | --------- |
+| circle    | overlapping cross-island pairs    | 188   | **0**     |
+| circle    | min center-dist / Σr              | 0.971 | **1.369** |
+| rect      | edge-adjacent cross-island blocks | 62    | **0**     |
 
 Full 83,518-village rect mosaic: **100% containment, 0 underfilled shapes,
 ~17 s** (the gutter headroom fix also removed the earlier sub-grid underfills).
@@ -528,7 +530,7 @@ Full 83,518-village rect mosaic: **100% containment, 0 underfilled shapes,
 - Automatic island detection is a heuristic (`seaGapKm`); for accurate island
   grouping supply an explicit `islandAccessor` (e.g. an island property, or a
   derived province→island map).
-- The sea gutter only applies between *different* islands — regions within the
+- The sea gutter only applies between _different_ islands — regions within the
   same island stay contiguous.
 - Visuals: `demo/islands-circle.svg`, `demo/islands-rect.svg` (+ `.png`, islands
   color-coded). Probe: `scripts/probe-islands.js [cap] [--render]`.

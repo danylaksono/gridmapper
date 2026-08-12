@@ -90,12 +90,24 @@ async function run(features, cap, shapeType, render) {
   const shapeById = new Map(result.shapes.map((s) => [s.id, s]));
   for (const a of result.assignments) {
     const s = shapeById.get(a._shapeId);
-    if (s.type === 'rect') {
+    if (s.type === "rect") {
       // rect: the local grid IS the block; containment is by construction.
-      if (a.gridX < 0 || a.gridX >= a.shapeCols || a.gridY < 0 || a.gridY >= a.shapeRows) bad++;
+      if (
+        a.gridX < 0 ||
+        a.gridX >= a.shapeCols ||
+        a.gridY < 0 ||
+        a.gridY >= a.shapeRows
+      )
+        bad++;
       continue;
     }
-    const [gx, gy] = cellCenterToGeo(s, a.gridY, a.gridX, a.shapeRows, a.shapeCols);
+    const [gx, gy] = cellCenterToGeo(
+      s,
+      a.gridY,
+      a.gridX,
+      a.shapeRows,
+      a.shapeCols,
+    );
     if (!pointInPolygon(gx, gy, s.polygon)) bad++;
   }
   // shape capacity check
@@ -138,7 +150,16 @@ function renderSvg(result, out, shapeType) {
   const py = (y) => offY + (BY - y) * S;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#f7f9fc"/>`;
-  const palette = ["#e8f1ff", "#fdf0d5", "#e7f6e7", "#fdeaea", "#eef0f7", "#f9f4e9", "#e8f6f6", "#f6ebfb"];
+  const palette = [
+    "#e8f1ff",
+    "#fdf0d5",
+    "#e7f6e7",
+    "#fdeaea",
+    "#eef0f7",
+    "#f9f4e9",
+    "#e8f6f6",
+    "#f6ebfb",
+  ];
   result.shapes.forEach((s, i) => {
     const d = s.polygon
       .map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`)
@@ -147,7 +168,13 @@ function renderSvg(result, out, shapeType) {
   });
   for (const a of result.assignments) {
     const s = result.shapes.find((sh) => sh.id === a._shapeId);
-    const [gx, gy] = cellCenterToGeo(s, a.gridY, a.gridX, a.shapeRows, a.shapeCols);
+    const [gx, gy] = cellCenterToGeo(
+      s,
+      a.gridY,
+      a.gridX,
+      a.shapeRows,
+      a.shapeCols,
+    );
     svg += `<circle cx="${px(gx).toFixed(1)}" cy="${py(gy).toFixed(1)}" r="1.7" fill="#1a3a6b" opacity="0.85"/>`;
   }
   svg += `</svg>`;

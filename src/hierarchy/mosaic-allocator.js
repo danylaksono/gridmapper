@@ -21,22 +21,25 @@
  * Containment is guaranteed by construction in both paths.
  */
 
-import { GridMapper } from '../core/grid-mapper.js';
-import { buildHierarchy } from './hierarchy-tree.js';
-import { gridTreemap, rectArea } from './grid-treemap.js';
-import { packLeavesIntoBlock } from './footprint-packer.js';
-import { detectIslands } from './islands.js';
-import { SpacerUtils } from '../features/spacer-utils.js';
-import { normalizePointsToGrid } from '../normalization/point-normalizer.js';
-import { solveAdvancedAllocation, mapSolutionToAssignments } from '../core/allocation-engine-advanced.js';
-import { runForceSimulation } from '../cartogram/force-simulation.js';
+import { GridMapper } from "../core/grid-mapper.js";
+import { buildHierarchy } from "./hierarchy-tree.js";
+import { gridTreemap, rectArea } from "./grid-treemap.js";
+import { packLeavesIntoBlock } from "./footprint-packer.js";
+import { detectIslands } from "./islands.js";
+import { SpacerUtils } from "../features/spacer-utils.js";
+import { normalizePointsToGrid } from "../normalization/point-normalizer.js";
+import {
+  solveAdvancedAllocation,
+  mapSolutionToAssignments,
+} from "../core/allocation-engine-advanced.js";
+import { runForceSimulation } from "../cartogram/force-simulation.js";
 import {
   weightToRadius,
   calculateScaleFactor,
   createCircleCoordinates,
   createHexagonCoordinates,
   createRectangleCoordinates,
-} from '../cartogram/shape-generator.js';
+} from "../cartogram/shape-generator.js";
 
 /**
  * @param {Array} features - Finest-level features (e.g. villages).
@@ -83,7 +86,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     mapper = new GridMapper(),
     compactness = 0.5,
     weightOf = () => 1,
-    shapeType = 'rect',
+    shapeType = "rect",
     slack = 1.35,
     seed = 1,
     dorlingIterations = 800,
@@ -99,17 +102,26 @@ export async function allocateMosaicHierarchical(features, options = {}) {
   } = options;
 
   if (levels.length === 0)
-    throw new Error('allocateMosaicHierarchical: options.levels is required');
-  if (!mip) throw new Error('allocateMosaicHierarchical: options.mip is required');
+    throw new Error("allocateMosaicHierarchical: options.levels is required");
+  if (!mip)
+    throw new Error("allocateMosaicHierarchical: options.mip is required");
 
   const coordsOf = (f) => [xAccessor(f), yAccessor(f)];
-  const roots = buildHierarchy(features, { idAccessor, levels, coordsOf, weightOf });
+  const roots = buildHierarchy(features, {
+    idAccessor,
+    levels,
+    coordsOf,
+    weightOf,
+  });
 
   // Containers = leaf-parent nodes (children are leaves).
   const containers = [];
   const collect = (nodes) => {
     for (const n of nodes) {
-      if (n.children.length > 0 && n.children.every((c) => c.children.length === 0)) {
+      if (
+        n.children.length > 0 &&
+        n.children.every((c) => c.children.length === 0)
+      ) {
         containers.push(n);
       } else {
         collect(n.children);
@@ -118,14 +130,19 @@ export async function allocateMosaicHierarchical(features, options = {}) {
   };
   collect(roots);
   if (containers.length === 0)
-    throw new Error('allocateMosaicHierarchical: no leaf-parent containers found');
+    throw new Error(
+      "allocateMosaicHierarchical: no leaf-parent containers found",
+    );
 
   // --- Value-scaled areas (value ∝ weight, floored by descendant count) ---
   const totalLeaves = containers.reduce((s, n) => s + n.leafCount, 0);
   const totalValue = containers.reduce((s, n) => s + Math.max(1, n.weight), 0);
   const valueScale = totalLeaves / Math.max(1, totalValue);
   containers.forEach((n) => {
-    n._area = Math.max(n.leafCount, Math.max(1, Math.round(n.weight * valueScale)));
+    n._area = Math.max(
+      n.leafCount,
+      Math.max(1, Math.round(n.weight * valueScale)),
+    );
   });
   const totalArea = containers.reduce((s, n) => s + n._area, 0);
 
@@ -143,22 +160,52 @@ export async function allocateMosaicHierarchical(features, options = {}) {
   }
 
   // --- Layout the mosaic parent level ---
-  if (shapeType === 'rect') {
-    layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, dirPolicy, islandInfo, seaGutter);
-  } else if (shapeType === 'circle' || shapeType === 'hex') {
-    layoutDorlingMosaic(containers, shapeType, dorlingIterations, dorlingK, seed, islandInfo, islandGap);
+  if (shapeType === "rect") {
+    layoutRectMosaic(
+      containers,
+      totalArea,
+      slack,
+      minFactor,
+      orderMode,
+      dirPolicy,
+      islandInfo,
+      seaGutter,
+    );
+  } else if (shapeType === "circle" || shapeType === "hex") {
+    layoutDorlingMosaic(
+      containers,
+      shapeType,
+      dorlingIterations,
+      dorlingK,
+      seed,
+      islandInfo,
+      islandGap,
+    );
   } else {
-    throw new Error(`allocateMosaicHierarchical: unknown shapeType "${shapeType}"`);
+    throw new Error(
+      `allocateMosaicHierarchical: unknown shapeType "${shapeType}"`,
+    );
   }
 
   // --- Pack children into each shape ---
   const assignments = [];
-  const packOpts = { mapper, mip, xAccessor, yAccessor, compactness, smallBlockThreshold };
+  const packOpts = {
+    mapper,
+    mip,
+    xAccessor,
+    yAccessor,
+    compactness,
+    smallBlockThreshold,
+  };
 
   for (const n of containers) {
     const shape = n._shape;
-    if (shape.type === 'rect') {
-      const packed = await packLeavesIntoBlock(n.children, shape.block, packOpts);
+    if (shape.type === "rect") {
+      const packed = await packLeavesIntoBlock(
+        n.children,
+        shape.block,
+        packOpts,
+      );
       for (const p of packed) {
         if (p._subdivided) {
           // block was too small — cells are sub-cells within the block (safety net)
@@ -187,7 +234,12 @@ export async function allocateMosaicHierarchical(features, options = {}) {
         }
       }
     } else {
-      const packed = await packIntoShape(n.children, shape, { mip, xAccessor, yAccessor, compactness });
+      const packed = await packIntoShape(n.children, shape, {
+        mip,
+        xAccessor,
+        yAccessor,
+        compactness,
+      });
       for (const p of packed) {
         assignments.push({
           ...p.item,
@@ -209,7 +261,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     shapes,
     hierarchy: roots,
     meta: {
-      mode: 'mosaic',
+      mode: "mosaic",
       shapeType,
       levels,
       count: assignments.length,
@@ -226,7 +278,16 @@ export async function allocateMosaicHierarchical(features, options = {}) {
 // ---------------------------------------------------------------------------
 // Rectangular mosaic (exact-cell treemap)
 // ---------------------------------------------------------------------------
-function layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, dirPolicy, islandInfo = null, seaGutter = 0) {
+function layoutRectMosaic(
+  containers,
+  totalArea,
+  slack,
+  minFactor,
+  orderMode,
+  dirPolicy,
+  islandInfo = null,
+  seaGutter = 0,
+) {
   let minX = Infinity,
     maxX = -Infinity,
     minY = Infinity,
@@ -238,7 +299,10 @@ function layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, di
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
   }
-  const aspect = Math.max(0.25, Math.min(4, (maxX - minX) / Math.max(1e-9, maxY - minY)));
+  const aspect = Math.max(
+    0.25,
+    Math.min(4, (maxX - minX) / Math.max(1e-9, maxY - minY)),
+  );
 
   // Grid must be big enough for the blocks plus the sea gutters between islands.
   let layoutTotal = totalArea;
@@ -260,12 +324,15 @@ function layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, di
   while (rows * cols < cells) rows++;
 
   const globalRect = { r0: 0, c0: 0, r1: rows - 1, c1: cols - 1 };
-  const extent = { x: Math.max(1e-12, maxX - minX), y: Math.max(1e-12, maxY - minY) };
+  const extent = {
+    x: Math.max(1e-12, maxX - minX),
+    y: Math.max(1e-12, maxY - minY),
+  };
   const treemapBase = {
     minFactor,
     positionOf: (n) => n.centroid,
-    orderMode: orderMode ?? (aspect >= 1 ? 'xy' : 'yxDesc'),
-    dirPolicy: dirPolicy ?? 'spreadNorm',
+    orderMode: orderMode ?? (aspect >= 1 ? "xy" : "yxDesc"),
+    dirPolicy: dirPolicy ?? "spreadNorm",
     extent,
   };
 
@@ -278,8 +345,10 @@ function layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, di
       groups.get(island).push(containers[i]);
     });
     const islandNodes = [...groups.entries()].map(([islandId, members]) => {
-      const cx = members.reduce((s, m) => s + m.centroid[0], 0) / members.length;
-      const cy = members.reduce((s, m) => s + m.centroid[1], 0) / members.length;
+      const cx =
+        members.reduce((s, m) => s + m.centroid[0], 0) / members.length;
+      const cy =
+        members.reduce((s, m) => s + m.centroid[1], 0) / members.length;
       const area = members.reduce((s, m) => s + m._area, 0);
       return {
         id: `island_${islandId}`,
@@ -308,7 +377,10 @@ function layoutRectMosaic(containers, totalArea, slack, minFactor, orderMode, di
     return;
   }
 
-  const blocks = gridTreemap(containers, globalRect, { ...treemapBase, weightOf: (n) => n._area });
+  const blocks = gridTreemap(containers, globalRect, {
+    ...treemapBase,
+    weightOf: (n) => n._area,
+  });
   for (const n of containers) {
     assignRectShape(n, blocks.get(n.id), null);
   }
@@ -319,13 +391,18 @@ function assignRectShape(n, b, island) {
   const h = b.r1 - b.r0 + 1;
   n._shape = {
     id: n.id,
-    type: 'rect',
+    type: "rect",
     block: b,
     island: island ?? n._island ?? null,
     bbox: { minX: b.c0, maxX: b.c1 + 1, minY: b.r0, maxY: b.r1 + 1 },
     shapeRows: h,
     shapeCols: w,
-    polygon: createRectangleCoordinates((b.c0 + b.c1) / 2, (b.r0 + b.r1) / 2, w, h),
+    polygon: createRectangleCoordinates(
+      (b.c0 + b.c1) / 2,
+      (b.r0 + b.r1) / 2,
+      w,
+      h,
+    ),
     weight: n.weight,
     leafCount: n.leafCount,
   };
@@ -341,7 +418,15 @@ function insetRect(r, g) {
 // ---------------------------------------------------------------------------
 // Dorling mosaic (circles / hexagons via force simulation)
 // ---------------------------------------------------------------------------
-function layoutDorlingMosaic(containers, shapeType, iterations, k, seed, islandInfo = null, islandGap = 0) {
+function layoutDorlingMosaic(
+  containers,
+  shapeType,
+  iterations,
+  k,
+  seed,
+  islandInfo = null,
+  islandGap = 0,
+) {
   let minX = Infinity,
     maxX = -Infinity,
     minY = Infinity,
@@ -388,7 +473,7 @@ function layoutDorlingMosaic(containers, shapeType, iterations, k, seed, islandI
 
   runForceSimulation(nodes, {
     iterations,
-    shapeType: shapeType === 'hex' ? 'hexagon' : 'circle',
+    shapeType: shapeType === "hex" ? "hexagon" : "circle",
     repulsionStrength: 1.0,
     anchorStrength: 0.02,
     coolingFactor: 0.998,
@@ -408,7 +493,7 @@ function layoutDorlingMosaic(containers, shapeType, iterations, k, seed, islandI
   nodes.forEach((n, i) => {
     const container = containers[i];
     const polygon =
-      shapeType === 'hex'
+      shapeType === "hex"
         ? createHexagonCoordinates(n.x, n.y, n.radius)
         : createCircleCoordinates(n.x, n.y, n.radius);
     let bx = Infinity,
@@ -464,7 +549,14 @@ async function packIntoShape(children, shape, opts) {
   let cols = rows;
   let spacers = null;
   for (let g = 0; g < 24; g++) {
-    const sp = SpacerUtils.autoCompute([], bounds, rows, cols, shape.polygon, 'rect');
+    const sp = SpacerUtils.autoCompute(
+      [],
+      bounds,
+      rows,
+      cols,
+      shape.polygon,
+      "rect",
+    );
     if (rows * cols - sp.length >= target) {
       spacers = sp;
       break;
@@ -473,18 +565,27 @@ async function packIntoShape(children, shape, opts) {
     cols += 1;
   }
   if (!spacers) {
-    throw new Error(`packIntoShape: cannot fit ${target} cells into shape ${shape.id}`);
+    throw new Error(
+      `packIntoShape: cannot fit ${target} cells into shape ${shape.id}`,
+    );
   }
 
   const spacerSet = new Set(spacers.map(([r, c]) => `${r}_${c}`));
-  const normalizedPoints = normalizePointsToGrid(pts, bounds, rows, cols, compactness, 'rect');
+  const normalizedPoints = normalizePointsToGrid(
+    pts,
+    bounds,
+    rows,
+    cols,
+    compactness,
+    "rect",
+  );
   const solution = await solveAdvancedAllocation(normalizedPoints, {
     gridRows: rows,
     gridCols: cols,
-    gridType: 'rect',
-    distanceMetric: 'euclidean',
+    gridType: "rect",
+    distanceMetric: "euclidean",
     compactnessWeight: 1,
-    spacerMode: 'hard',
+    spacerMode: "hard",
     maskPenalty: 1e3,
     spacerSet,
     adjacencyWeight: 0,

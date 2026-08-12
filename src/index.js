@@ -32,7 +32,11 @@ export {
 } from "./hierarchy/hierarchy-tree.js";
 export { gridTreemap, rectArea } from "./hierarchy/grid-treemap.js";
 export { packLeavesIntoBlock } from "./hierarchy/footprint-packer.js";
-export { hilbertIndex, orderByMorton, orderByHilbert } from "./hierarchy/spatial-order.js";
+export {
+  hilbertIndex,
+  orderByMorton,
+  orderByHilbert,
+} from "./hierarchy/spatial-order.js";
 export { detectIslands } from "./hierarchy/islands.js";
 
 // Dorling/Demers Cartogram exports

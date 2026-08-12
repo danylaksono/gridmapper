@@ -51,7 +51,12 @@ function circleSeparation(shapes) {
       if (d < sumR * 1.25) close++; // below the default sea gap
     }
   }
-  return { pairs, overlap, close, minGapRatio: minGapRatio === Infinity ? null : minGapRatio };
+  return {
+    pairs,
+    overlap,
+    close,
+    minGapRatio: minGapRatio === Infinity ? null : minGapRatio,
+  };
 }
 
 function rectSeparation(shapes) {
@@ -88,7 +93,10 @@ async function run(features, shapeType, extra, render, out) {
     seaGapKm: 30,
     ...extra,
   });
-  const stat = shapeType === "rect" ? rectSeparation(result.shapes) : circleSeparation(result.shapes);
+  const stat =
+    shapeType === "rect"
+      ? rectSeparation(result.shapes)
+      : circleSeparation(result.shapes);
   if (render) renderSvg(result, out, shapeType);
   return { result, stat };
 }
@@ -113,10 +121,24 @@ function renderSvg(result, out, shapeType) {
   const py = (y) => offY + (BY - y) * S;
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#eaf4fb"/>`;
   const islandColor = new Map();
-  const palette = ["#f6d6a8", "#bcd8f0", "#c9e6c9", "#f3c3c3", "#d9d2ee", "#f2e3b3", "#bfe6e6", "#e6c8e8", "#e6d9c6", "#cfe0c0"];
+  const palette = [
+    "#f6d6a8",
+    "#bcd8f0",
+    "#c9e6c9",
+    "#f3c3c3",
+    "#d9d2ee",
+    "#f2e3b3",
+    "#bfe6e6",
+    "#e6c8e8",
+    "#e6d9c6",
+    "#cfe0c0",
+  ];
   result.shapes.forEach((s) => {
-    if (!islandColor.has(s.island)) islandColor.set(s.island, palette[islandColor.size % palette.length]);
-    const d = s.polygon.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(" ");
+    if (!islandColor.has(s.island))
+      islandColor.set(s.island, palette[islandColor.size % palette.length]);
+    const d = s.polygon
+      .map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`)
+      .join(" ");
     svg += `<polygon points="${d}" fill="${islandColor.get(s.island)}" stroke="#33415c" stroke-width="1.5" stroke-linejoin="round"/>`;
   });
   fs.writeFileSync(out, svg + `</svg>`);
@@ -143,11 +165,19 @@ async function main() {
       y,
     };
   });
-  console.log(`features: ${data.length} (kel_desa layer), seaGapKm=30 (auto island detection)\n`);
+  console.log(
+    `features: ${data.length} (kel_desa layer), seaGapKm=30 (auto island detection)\n`,
+  );
 
   // circle: separation OFF vs ON
   const cOff = await run(data, "circle", { islandGap: 0 }, false);
-  const cOn = await run(data, "circle", { islandGap: 0.4 }, render, "demo/islands-circle.svg");
+  const cOn = await run(
+    data,
+    "circle",
+    { islandGap: 0.4 },
+    render,
+    "demo/islands-circle.svg",
+  );
   console.log(`[circle] islands detected: ${cOn.result.meta.islands}`);
   console.log(
     `  gap OFF: cross-island pairs=${cOff.stat.pairs} overlap=${cOff.stat.overlap}  min dist/Σr=${cOff.stat.minGapRatio?.toFixed(3)}`,
@@ -158,10 +188,20 @@ async function main() {
 
   // rect: sea gutter OFF vs ON
   const rOff = await run(data, "rect", { seaGutter: 0 }, false);
-  const rOn = await run(data, "rect", { seaGutter: 1 }, render, "demo/islands-rect.svg");
+  const rOn = await run(
+    data,
+    "rect",
+    { seaGutter: 1 },
+    render,
+    "demo/islands-rect.svg",
+  );
   console.log(`\n[rect] islands detected: ${rOn.result.meta.islands}`);
-  console.log(`  gutter OFF: cross-island pairs=${rOff.stat.pairs} edge-adjacent=${rOff.stat.adjacent}`);
-  console.log(`  gutter ON : cross-island pairs=${rOn.stat.pairs} edge-adjacent=${rOn.stat.adjacent}`);
+  console.log(
+    `  gutter OFF: cross-island pairs=${rOff.stat.pairs} edge-adjacent=${rOff.stat.adjacent}`,
+  );
+  console.log(
+    `  gutter ON : cross-island pairs=${rOn.stat.pairs} edge-adjacent=${rOn.stat.adjacent}`,
+  );
 }
 
 let glpk = null;
