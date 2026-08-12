@@ -637,14 +637,14 @@ fixes that: the heavy payload is never read by the allocator path.
 
 - `src/hierarchy/centroid-table.js`:
   - `extractCentroidRecords(features, { idAccessor, coordsOf, weightOf,
-    levelKeys, extra, includeBBox })` — copies out only `{ id, x, y, weight,
-    ...parentCodes, ...extra }`; accepts full GeoJSON features **or** already
+levelKeys, extra, includeBBox })` — copies out only `{ id, x, y, weight,
+...parentCodes, ...extra }`; accepts full GeoJSON features **or** already
     light records, tolerating `.properties` nesting.
   - `loadCentroidRecords(path)` / `saveCentroidRecords(path, records)` —
     `.json` (array) or `.jsonl` (NDJSON). NDJSON is streamed line-by-line via
     `readline`, so even a huge table never lives as one giant string/array.
   - `mergeAssignmentsToFeatures(features, assignments, { idAccessor,
-    assignmentIdOf, inPlace })` — attaches `gridX/gridY/_path/_shape/...` back
+assignmentIdOf, inPlace })` — attaches `gridX/gridY/_path/_shape/...` back
     onto the **full** features by id, so rendering still has the geometry.
   - `centroidOfFeature(geometry)` — fast mean-of-vertices centroid (matches the
     probe scripts' arithmetic mean → cell-for-cell identical output).
@@ -659,12 +659,12 @@ fixes that: the heavy payload is never read by the allocator path.
 
 ### Measured
 
-| step                    | full 83,518 villages                         |
-| ----------------------- | ------------------------------------------- |
+| step                      | full 83,518 villages                                         |
+| ------------------------- | ------------------------------------------------------------ |
 | table load (14 MB NDJSON) | **271 ms** (vs ~2–3 s + ~700 MB to parse the 166 MB GeoJSON) |
-| hierarchical allocation | ~8 s (100% containment)                     |
-| mosaic rect allocation  | ~13.7 s (100% containment)                  |
-| merge-back (20,000, opt) | 20,000/20,000 features got grid fields, geometry preserved |
+| hierarchical allocation   | ~8 s (100% containment)                                      |
+| mosaic rect allocation    | ~13.7 s (100% containment)                                   |
+| merge-back (20,000, opt)  | 20,000/20,000 features got grid fields, geometry preserved   |
 
 Disk: **14 MB** table vs **166 MB** GeoJSON (~12× smaller). Memory: the
 allocation path now holds only lightweight records, not 83,518 parsed
@@ -678,11 +678,15 @@ import { loadCentroidRecords, allocateHierarchical } from "gridmapper";
 const data = await loadCentroidRecords("kel_desa.centroids.jsonl"); // never touches geometry
 const res = await allocateHierarchical(data, {
   levels: ["provinsi_code", "kab_kota_code", "kecamatan_code"],
-  xAccessor: (d) => d.x, yAccessor: (d) => d.y,
+  xAccessor: (d) => d.x,
+  yAccessor: (d) => d.y,
   idAccessor: (d) => d.id,
   mip, // GLPKSolver
 });
 // later, for rendering with real geometry:
-const enriched = mergeAssignmentsToFeatures(fullGeoJsonFeatures, res.assignments,
-  { idAccessor: (d) => d.properties.code, assignmentIdOf: (a) => a.id });
+const enriched = mergeAssignmentsToFeatures(
+  fullGeoJsonFeatures,
+  res.assignments,
+  { idAccessor: (d) => d.properties.code, assignmentIdOf: (a) => a.id },
+);
 ```

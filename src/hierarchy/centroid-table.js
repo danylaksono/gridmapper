@@ -101,7 +101,9 @@ export function extractCentroidRecords(features, options = {}) {
   } = options;
 
   return features.map((f) => {
-    let x, y, bbox = null;
+    let x,
+      y,
+      bbox = null;
     if (coordsOf) {
       const c = coordsOf(f);
       x = c[0];
@@ -149,8 +151,7 @@ export function extractCentroidRecords(features, options = {}) {
 export async function saveCentroidRecords(path, records, options = {}) {
   const fs = await import("node:fs");
   const format =
-    options.format ??
-    (/\.jsonl$|\.ndjson$/i.test(path) ? "jsonl" : "json");
+    options.format ?? (/\.jsonl$|\.ndjson$/i.test(path) ? "jsonl" : "json");
   if (format === "jsonl") {
     const lines = records.map((r) => JSON.stringify(r) + "\n").join("");
     await fs.promises.writeFile(path, lines, "utf8");
@@ -173,8 +174,7 @@ export async function loadCentroidRecords(path, options = {}) {
   const fs = await import("node:fs");
   const readline = await import("node:readline");
   const format =
-    options.format ??
-    (/\.jsonl$|\.ndjson$/i.test(path) ? "jsonl" : "json");
+    options.format ?? (/\.jsonl$|\.ndjson$/i.test(path) ? "jsonl" : "json");
 
   if (format === "jsonl") {
     const records = [];

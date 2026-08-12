@@ -48,7 +48,9 @@ async function main() {
   const t2 = performance.now();
   await saveCentroidRecords(out, records, { format: "jsonl" });
   const kb = Math.round(fs.statSync(out).size / 1024);
-  console.log(`[write] ${path.basename(out)} (${kb} KB) in ${Math.round(performance.now() - t2)}ms`);
+  console.log(
+    `[write] ${path.basename(out)} (${kb} KB) in ${Math.round(performance.now() - t2)}ms`,
+  );
 }
 
 main().catch((e) => {

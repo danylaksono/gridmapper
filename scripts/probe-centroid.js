@@ -148,7 +148,9 @@ async function main() {
     );
   }
 
-  console.log(`\ncentroid-only: ${hierOk && mosaicOk ? "ALL CHECKS PASS ✓" : "FAILURES ✗"}`);
+  console.log(
+    `\ncentroid-only: ${hierOk && mosaicOk ? "ALL CHECKS PASS ✓" : "FAILURES ✗"}`,
+  );
 }
 
 main().catch((e) => {
