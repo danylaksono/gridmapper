@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GridMapper — Indonesia hybrid cartogram</title>
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        html,
+        body,
+        #map {
+            height: 100%;
+            margin: 0;
+            font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .panel {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            width: 250px;
+            max-height: 88%;
+            background: rgba(255, 255, 255, .96);
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .25);
+            padding: 12px 14px;
+            overflow: auto;
+            font-size: 13px;
+        }
+
+        .panel h1 {
+            font-size: 15px;
+            margin: 0 0 4px;
+        }
+
+        .panel .sub {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .panel label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 0;
+            cursor: pointer;
+        }
+
+        .panel select {
+            width: 100%;
+            padding: 4px;
+            margin: 6px 0 10px;
+        }
+
+        .legend {
+            margin-top: 8px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 8px;
+            max-height: 240px;
+            overflow: auto;
+        }
+
+        .legend .row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 1px 0;
+            font-size: 11.5px;
+        }
+
+        .legend .sw {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            border: 1px solid rgba(0, 0, 0, .15);
+            flex: none;
+        }
+
+        #tip {
+            position: absolute;
+            z-index: 20;
+            display: none;
+            pointer-events: none;
+            background: #111827;
+            color: #fff;
+            font-size: 12px;
+            padding: 6px 9px;
+            border-radius: 6px;
+            max-width: 280px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+            line-height: 1.35;
+        }
+
+        #tip b {
+            color: #93c5fd;
+        }
+
+        .err {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            background: rgba(255, 255, 255, .9);
+            text-align: center;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .err code {
+            background: #f3f4f6;
+            padding: 1px 5px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="tip"></div>
+    <div class="panel">
+        <h1>🇮🇩 GridMapper — hybrid cartogram</h1>
+        <div class="sub">village cells (colored by province) nested inside kabupaten blocks, over real Indonesia
+            boundaries.</div>
+        <label>Shape</label>
+        <select id="shape">
+            <option value="rect">rect (treemap mosaic)</option>
+            <option value="circle">circle (Dorling)</option>
+            <option value="hex">hex (Dorling)</option>
+            <option value="rect-hilbert">rect + hilbertPath</option>
+            <option value="circle-hilbert">circle + hilbertPath</option>
+        </select>
+        <label><input type="checkbox" id="t-basemap" checked /> basemap tiles</label>
+        <label><input type="checkbox" id="t-prov" /> real province boundaries</label>
+        <label><input type="checkbox" id="t-kab" checked /> kabupaten blocks</label>
+        <label><input type="checkbox" id="t-shape" /> kecamatan shapes</label>
+        <label><input type="checkbox" id="t-village" checked /> villages</label>
+        <div class="legend" id="legend"></div>
+    </div>
+    <div class="err" id="err"></div>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script>
+        const params = new URLSearchParams(location.search);
+        const shape = params.get("shape") || "rect";
+        document.getElementById("shape").value = shape;
+
+        const file = (suffix) => `indonesia-hybrid-${shape}-${suffix}.geojson`;
+        const urls = {
+            villages: file("villages"),
+            shapes: file("shapes"),
+            kabupaten: file("kabupaten"),
+            provinces: "indonesia-provinces.geojson",
+        };
+
+        const isShapeMode = shape.startsWith("circle") || shape.startsWith("hex");
+
+        async function loadJSON(u) {
+            const r = await fetch(u);
+            if (!r.ok) throw new Error(`404 ${u}`);
+            return r.json();
+        }
+
+        function palette(codes) {
+            const n = codes.length;
+            const m = {};
+            codes.forEach((c, i) => {
+                // evenly-spaced hues, one click lighter than pure HSL so fills read well
+                m[c] = `hsl(${Math.round((i * 360) / n)}, 72%, 60%)`;
+            });
+            return m;
+        }
+
+        function bboxOf(fc) {
+            let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+            const walk = (x) => {
+                if (typeof x[0] === "number") {
+                    if (x[0] < a) a = x[0]; if (x[0] > b) b = x[0];
+                    if (x[1] < c) c = x[1]; if (x[1] > d) d = x[1];
+                } else for (const y of x) walk(y);
+            };
+            for (const f of fc.features) walk(f.geometry.coordinates);
+            return [[a, c], [b, d]];
+        }
+
+        (async () => {
+            try {
+                const [villages, shapes, kabupaten, provinces] = await Promise.all([
+                    loadJSON(urls.villages), loadJSON(urls.shapes),
+                    loadJSON(urls.kabupaten), loadJSON(urls.provinces),
+                ]);
+
+                // province color map built from the data itself
+                const codes = [...new Set(villages.features.map((f) => f.properties.prov_code))].sort();
+                const colors = palette(codes);
+                const provName = {};
+                for (const f of villages.features) {
+                    const p = f.properties;
+                    provName[p.prov_code] = p.prov_name;
+                }
+                const match = ["match", ["get", "prov_code"]];
+                for (const c of codes) { match.push(c, colors[c]); }
+                match.push("#9ca3af");
+
+                const map = new maplibregl.Map({
+                    container: "map",
+                    center: [118.5, -2.6],
+                    zoom: 3.4,
+                    style: {
+                        version: 8,
+                        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+                        sources: {
+                            basemap: {
+                                type: "raster",
+                                tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"],
+                                tileSize: 256,
+                                attribution: "© OpenStreetMap contributors © CARTO",
+                            },
+                            villages: { type: "geojson", data: villages, tolerance: 0 },
+                            shapes: { type: "geojson", data: shapes },
+                            kabupaten: { type: "geojson", data: kabupaten },
+                            provinces: { type: "geojson", data: provinces },
+                        },
+                        layers: [
+                            { id: "basemap", type: "raster", source: "basemap" },
+                            {
+                                id: "prov-fill", type: "fill", source: "provinces",
+                                paint: { "fill-color": "#ffffff", "fill-opacity": 0.25 },
+                                layout: { visibility: "none" }
+                            },
+                            {
+                                id: "prov-line", type: "line", source: "provinces",
+                                paint: { "line-color": "#6b7280", "line-width": 1, "line-opacity": 0.9 },
+                                layout: { visibility: "none" }
+                            },
+                            {
+                                id: "kab-line", type: "line", source: "kabupaten",
+                                paint: { "line-color": "#1e3a8a", "line-width": 1.3, "line-opacity": 0.9 }
+                            },
+                            {
+                                id: "shape-line", type: "line", source: "shapes",
+                                paint: { "line-color": "#334155", "line-width": 0.7, "line-opacity": 0.55 },
+                                layout: { visibility: isShapeMode ? "visible" : "none" }
+                            },
+                            {
+                                id: "village-fill", type: "fill", source: "villages",
+                                paint: {
+                                    "fill-color": match, "fill-opacity": 0.85,
+                                    "fill-outline-color": "rgba(0,0,0,0)"
+                                },
+                                layout: { visibility: isShapeMode ? "none" : "visible" }
+                            },
+                            {
+                                id: "village-dot", type: "circle", source: "villages",
+                                paint: {
+                                    "circle-color": match, "circle-radius": 2.2,
+                                    "circle-stroke-width": 0
+                                },
+                                layout: { visibility: isShapeMode ? "visible" : "none" }
+                            },
+                        ],
+                    },
+                });
+
+                map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+                map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-left");
+                map.fitBounds(bboxOf(provinces), { padding: 30 });
+
+                const setVis = (id, on) =>
+                    map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+                document.getElementById("t-basemap").addEventListener("change", (e) => setVis("basemap", e.target.checked));
+                document.getElementById("t-prov").addEventListener("change", (e) => {
+                    setVis("prov-fill", e.target.checked);
+                    setVis("prov-line", e.target.checked);
+                });
+                document.getElementById("t-kab").addEventListener("change", (e) => setVis("kab-line", e.target.checked));
+                document.getElementById("t-shape").addEventListener("change", (e) => setVis("shape-line", e.target.checked));
+                document.getElementById("t-village").addEventListener("change", (e) => {
+                    setVis("village-fill", e.target.checked && !isShapeMode);
+                    setVis("village-dot", e.target.checked && isShapeMode);
+                });
+                document.getElementById("shape").addEventListener("change", (e) => {
+                    location.search = "?shape=" + e.target.value;
+                });
+
+                // tooltip
+                const tip = document.getElementById("tip");
+                const showTip = (e) => {
+                    const p = e.features[0].properties;
+                    const html =
+                        `<b>${p.name || p.code}</b>` +
+                        (p.prov_name ? `<br/>provinsi: ${p.prov_name}` : "") +
+                        (p.kab_name ? `<br/>kabupaten: ${p.kab_name}` : "") +
+                        (p.kec_name ? `<br/>kecamatan: ${p.kec_name}` : "") +
+                        (p.leafCount ? `<br/>villages: ${p.leafCount}` : "");
+                    tip.innerHTML = html;
+                    tip.style.display = "block";
+                    tip.style.left = (e.point.x + 12) + "px";
+                    tip.style.top = (e.point.y + 12) + "px";
+                    map.getCanvas().style.cursor = "pointer";
+                };
+                const hideTip = () => { tip.style.display = "none"; map.getCanvas().style.cursor = ""; };
+                map.on("mousemove", "village-fill", showTip);
+                map.on("mousemove", "village-dot", showTip);
+                map.on("mousemove", "kab-line", showTip);
+                map.on("mouseleave", "village-fill", hideTip);
+                map.on("mouseleave", "village-dot", hideTip);
+                map.on("mouseleave", "kab-line", hideTip);
+
+                // legend
+                const legend = document.getElementById("legend");
+                for (const c of codes) {
+                    const row = document.createElement("div");
+                    row.className = "row";
+                    const sw = document.createElement("span");
+                    sw.className = "sw";
+                    sw.style.background = colors[c];
+                    row.appendChild(sw);
+                    row.appendChild(document.createTextNode(`${provName[c] || c} (${c})`));
+                    legend.appendChild(row);
+                }
+                legend.insertAdjacentHTML("afterbegin", "<div style='font-weight:600;margin-bottom:4px'>Provinces</div>");
+            } catch (err) {
+                document.getElementById("err").style.display = "flex";
+                document.getElementById("err").innerHTML =
+                    `<div>Could not load the sample data.<br/><br/>` +
+                    `<b>${err.message}</b><br/><br/>` +
+                    `MapLibre fetches the GeoJSON over HTTP, so open this page through a local server:<br/>` +
+                    `<code>npx serve demo</code> &nbsp;or&nbsp; <code>python -m http.server -d demo</code><br/><br/>` +
+                    `then open <code>http://localhost:3000/maplibre-hybrid.html</code>.<br/><br/>` +
+                    `(Run <code>node scripts/export-hybrid-demo.js [rect|circle|hex] [cap] [--hilbert]</code> to regenerate samples.)</div>`;
+            }
+        })();
+    </script>
+</body>
+
+</html>

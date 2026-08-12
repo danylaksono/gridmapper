@@ -832,3 +832,60 @@ strong (~0.58 / ~0.66) instead of sacrificing one for the other. At the full
 - `footprint-packer.js` greedy `nearestFree` could fail on a nearly-full grid
   (diamond scan stopped at `max(rows, cols)`, but max Manhattan distance is
   `(rows−1)+(cols−1)`); added a full-cell fallback scan.
+
+---
+
+## 17. Indonesia samples + interactive MapLibre map
+
+Sample outputs from the real Indonesia data, viewable on an interactive
+MapLibre GL map.
+
+### What was added
+
+- `scripts/export-hybrid-demo.js [shapeType=rect] [cap=20000] [--hilbert]` —
+  runs the hybrid allocator on a **representative stride sample** of kel_desa
+  (every k-th village, so all 38 provinces are represented instead of a
+  contiguous slice), then projects the cartogram grid onto Indonesia's real
+  geographic extent so the result overlays the actual map. Writes:
+  - `demo/indonesia-hybrid-<tag>-villages.geojson` — village cells (rects) or
+    dots, colored by province,
+  - `demo/indonesia-hybrid-<tag>-shapes.geojson` — kecamatan shapes,
+  - `demo/indonesia-hybrid-<tag>-kabupaten.geojson` — kabupaten block outlines,
+  - `demo/indonesia-provinces.geojson` — real province boundaries (reference).
+  - Tags: `rect`, `circle`, `hex`, `rect-hilbert`, `circle-hilbert`.
+- `demo/maplibre-hybrid.html?shape=<tag>` — self-contained MapLibre GL viewer:
+  province-colored villages, kabupaten outlines, real-boundary toggle, basemap
+  toggle, hover tooltips (village/provinsi/kabupaten/kecamatan names), legend,
+  shape dropdown. MapLibre fetches the GeoJSON over HTTP, so serve the folder:
+  `node scripts/serve-demo.js` → `http://localhost:8123/maplibre-hybrid.html`.
+- `scripts/serve-demo.js [port=8123]` — tiny dependency-free static server for
+  `demo/`.
+
+### The sample
+
+20,000 villages (stride 4 of 83,518), 500 kabupaten, ~6,470 kecamatan, 33
+island clusters. Because the cartogram grid is projected onto Indonesia's real
+extent, provinces land roughly in place with the sea gaps between islands
+visible — and since it's a cartogram, cell area ≠ geographic area by design.
+
+### Bug found while generating samples
+
+The stride-sampled data exposed a latent **degenerate-block hang**:
+
+- `gridTreemap` could (rarely) emit a **zero-width/height block** (`c1 < c0`),
+  e.g. `{r0:5, c0:16, r1:5, c1:15}`.
+- `packLeavesIntoBlock` then computed `rows*cols = 0 < children` → subdivision
+  with `f = sqrt(need/0) = Infinity` → `rows = Infinity`, `cols = NaN`.
+- `greedyPack.nearestFree`'s fallback `for (r = 0; r < Infinity; r++)` looped
+  forever → the allocator appeared to hang.
+- Fixes:
+  - `gridTreemap` now clamps every terminal block to at least 1×1 (never
+    emits degenerate rects),
+  - `packLeavesIntoBlock` clamps `rows`/`cols` to finite, ≥ 1 at entry and
+    guards the subdivision maths,
+  - `nearestFree` throws a clear error if dims are non-finite instead of
+    looping.
+
+The full 83,518-village `hilbertPath` hybrid still passes 100% containment and
+now completes in ~11 s. Static previews: `demo/map-rect.png`,
+`demo/map-circle.png`, `demo/map-rect-hilbert.png`.

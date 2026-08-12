@@ -176,7 +176,12 @@ export function gridTreemap(items, rect, options = {}) {
   function split(from, to, r) {
     const n = to - from;
     if (n === 1) {
-      result.set(list[from].id, { r0: r.r0, c0: r.c0, r1: r.r1, c1: r.c1 });
+      result.set(list[from].id, {
+        r0: r.r0,
+        c0: r.c0,
+        r1: Math.max(r.r1, r.r0), // never emit a zero-height/width block
+        c1: Math.max(r.c1, r.c0),
+      });
       return;
     }
     const w = r.c1 - r.c0 + 1;
@@ -309,7 +314,12 @@ export function gridTreemap(items, rect, options = {}) {
     const n = to - from;
     if (n <= 1) {
       if (n === 1)
-        result.set(list[from].id, { r0: r.r0, c0: r.c0, r1: r.r1, c1: r.c1 });
+        result.set(list[from].id, {
+          r0: r.r0,
+          c0: r.c0,
+          r1: Math.max(r.r1, r.r0), // never emit a zero-height/width block
+          c1: Math.max(r.c1, r.c0),
+        });
       return;
     }
     const w = r.c1 - r.c0 + 1;

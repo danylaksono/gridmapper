@@ -38,16 +38,22 @@ export async function packLeavesIntoBlock(children, block, options = {}) {
   const blockRows = block.r1 - block.r0 + 1;
   const blockCols = block.c1 - block.c0 + 1;
 
-  // Local grid = the block's integer extent. If the block is smaller than the
-  // leaf count (a treemap shape that can't split into enough integer cells),
-  // subdivide the block's interior into finer sub-cells so the MIP always has
-  // capacity. Sub-cells stay strictly inside the block (containment holds).
+  // Local grid = the block's integer extent. Guard against degenerate /
+  // non-finite blocks (a treemap can in rare cases emit c1 < c0 or r1 < r0);
+  // never let rows/cols become 0 or Infinity/NaN, which would hang the packer.
   let rows = blockRows;
   let cols = blockCols;
+  if (!Number.isFinite(rows) || rows < 1) rows = 1;
+  if (!Number.isFinite(cols) || cols < 1) cols = 1;
+
+  // If the block is smaller than the leaf count (a treemap shape that can't
+  // split into enough integer cells), subdivide the block's interior into finer
+  // sub-cells so the MIP always has capacity. Sub-cells stay strictly inside
+  // the block (containment holds).
   let subdivided = false;
   if (rows * cols < children.length) {
     const need = children.length;
-    const f = Math.sqrt(need / (rows * cols));
+    const f = Math.sqrt(need / Math.max(1, rows * cols));
     rows = Math.max(rows, Math.ceil(rows * f));
     cols = Math.max(cols, Math.ceil(cols * f));
     while (rows * cols < need) {
@@ -142,6 +148,17 @@ function greedyPack(children, rows, cols, xAccessor, yAccessor) {
 }
 
 function nearestFree(ir, ic, rows, cols, used) {
+  // Defensive: degenerate / non-finite dims would make the ring scan and the
+  // fallback scan loop forever (e.g. rows = Infinity, cols = NaN from a
+  // 0-width block). Callers clamp rows/cols >= 1; throw rather than hang.
+  if (
+    !Number.isFinite(rows) ||
+    !Number.isFinite(cols) ||
+    rows < 1 ||
+    cols < 1
+  ) {
+    throw new Error(`greedyPack: degenerate grid dims ${rows}x${cols}`);
+  }
   const maxD = Math.max(rows, cols);
   for (let d = 0; d <= maxD; d++) {
     for (let r = ir - d; r <= ir + d; r++) {
