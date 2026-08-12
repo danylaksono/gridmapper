@@ -21,6 +21,9 @@ import { GridMapper } from "../core/grid-mapper.js";
 import { buildHierarchy } from "./hierarchy-tree.js";
 import { gridTreemap, rectArea } from "./grid-treemap.js";
 import { packLeavesIntoBlock } from "./footprint-packer.js";
+import { runWorkerPool } from "../utils/parallel.js";
+
+const PACK_WORKER_URL = new URL("./pack-worker.js", import.meta.url);
 
 /**
  * @param {Array} features - Finest-level features (e.g. villages).
@@ -52,6 +55,9 @@ import { packLeavesIntoBlock } from "./footprint-packer.js";
  *   'xy' for wider-than-tall maps, 'yxDesc' for taller-than-wide).
  * @param {string} [options.dirPolicy] - Advanced: 'aspect' | 'spread' | 'spreadNorm'
  *   | 'orderKey'. Overrides the split-direction policy (default 'spreadNorm').
+ * @param {number} [options.concurrency] - Worker-thread parallelism for the
+ *   independent leaf-packing MIPs (default 0 = auto: min(8, cpuCount-1) in
+ *   Node; browser falls back to sequential). Set 1 to force sequential.
  * @returns {Promise<Object>} { assignments, hierarchy, meta }
  *   - assignments: each leaf feature + global gridX/gridY + _path (ancestor ids) + _block.
  *   - hierarchy: root nodes (each gets a `_block` rect after allocation).
@@ -75,6 +81,7 @@ export async function allocateHierarchical(features, options = {}) {
     order = "spatial",
     orderMode = null,
     dirPolicy = null,
+    concurrency = 0,
     onProgress = null,
   } = options;
 
@@ -137,6 +144,32 @@ export async function allocateHierarchical(features, options = {}) {
   const rootBlocks = gridTreemap(roots, globalRect, treemapOpts);
   for (const root of roots) root._block = rootBlocks.get(root.id);
 
+  // --- Phase A: assign a block to every node (treemap), no packing ---
+  const assignBlocks = (node, block, path) => {
+    node._block = block;
+    node._path = [...path, node.id];
+    const isLeafParent =
+      node.children.length > 0 && node.children.every((c) => c.children.length === 0);
+    if (!isLeafParent) {
+      const subBlocks = gridTreemap(node.children, block, treemapOpts);
+      for (const child of node.children) {
+        assignBlocks(child, subBlocks.get(child.id), node._path);
+      }
+    }
+  };
+  for (const root of roots) assignBlocks(root, rootBlocks.get(root.id), []);
+
+  // --- Collect the independent packable units (leaf parents) ---
+  const leafParents = [];
+  const collect = (node) => {
+    if (node.children.length > 0 && node.children.every((c) => c.children.length === 0)) {
+      leafParents.push(node);
+    } else {
+      for (const c of node.children) collect(c);
+    }
+  };
+  for (const root of roots) collect(root);
+
   const assignments = [];
   const packOpts = {
     mapper,
@@ -147,34 +180,74 @@ export async function allocateHierarchical(features, options = {}) {
     smallBlockThreshold,
   };
 
-  const walk = async (node, block, path) => {
-    node._block = block;
-    const childPath = [...path, node.id];
-
-    if (
-      node.children.length > 0 &&
-      node.children.every((c) => c.children.length === 0)
-    ) {
-      // Node's children are leaves → pack one cell each.
-      const packed = await packLeavesIntoBlock(node.children, block, packOpts);
+  const packSequential = async () => {
+    for (const node of leafParents) {
+      const packed = await packLeavesIntoBlock(node.children, node._block, packOpts);
       for (const p of packed) {
-        assignments.push({ ...p, _path: childPath, _block: block });
+        assignments.push({ ...p, _path: node._path, _block: node._block });
       }
-      return;
-    }
-
-    const subBlocks = gridTreemap(node.children, block, treemapOpts);
-    for (const child of node.children) {
-      await walk(child, subBlocks.get(child.id), childPath);
+      if (onProgress) onProgress(assignments.length / totalLeaves);
     }
   };
 
-  let done = 0;
-  const rootCount = roots.length;
-  for (const root of roots) {
-    await walk(root, rootBlocks.get(root.id), []);
-    done++;
-    if (onProgress) onProgress(done / rootCount);
+  const packParallel = async () => {
+    const tasks = leafParents.map((node, index) => ({
+      index,
+      payload: {
+        mode: "block",
+        block: node._block,
+        children: node.children.map((c) => ({
+          id: c.id,
+          x: xAccessor(c.item),
+          y: yAccessor(c.item),
+        })),
+        compactness,
+        smallBlockThreshold,
+      },
+    }));
+    const results = await runWorkerPool(tasks, PACK_WORKER_URL, {
+      concurrency,
+      onProgress: onProgress
+        ? (f) => onProgress(Math.round(f * totalLeaves) / totalLeaves)
+        : null,
+    });
+    let done = 0;
+    leafParents.forEach((node, i) => {
+      for (const r of results[i]) {
+        const child = node.children.find((c) => c.id === r.childId);
+        assignments.push({
+          ...child.item,
+          gridX: r.gridX,
+          gridY: r.gridY,
+          gridRows: r.gridRows,
+          gridCols: r.gridCols,
+          ...(r.subdivided ? { _subdivided: true } : {}),
+          _path: node._path,
+          _block: node._block,
+        });
+        done++;
+      }
+    });
+    void done;
+  };
+
+  const useParallel =
+    concurrency !== 1 &&
+    leafParents.length > 4 &&
+    typeof process !== "undefined" &&
+    process.versions &&
+    typeof process.versions.node !== "undefined"; // Node only
+
+  if (useParallel) {
+    try {
+      await packParallel();
+    } catch (e) {
+      // worker_threads unavailable (e.g. browser/bundler) → fall back
+      assignments.length = 0;
+      await packSequential();
+    }
+  } else {
+    await packSequential();
   }
 
   return {

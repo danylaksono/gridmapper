@@ -25,8 +25,7 @@ import { GridMapper } from "../core/grid-mapper.js";
 import { buildHierarchy } from "./hierarchy-tree.js";
 import { gridTreemap, rectArea } from "./grid-treemap.js";
 import { packLeavesIntoBlock } from "./footprint-packer.js";
-import { detectIslands } from "./islands.js";
-import { SpacerUtils } from "../features/spacer-utils.js";
+import { detectIslands } from "./islands.js";import { runWorkerPool } from '../utils/parallel.js';import { SpacerUtils } from "../features/spacer-utils.js";
 import { normalizePointsToGrid } from "../normalization/point-normalizer.js";
 import {
   solveAdvancedAllocation,
@@ -40,7 +39,7 @@ import {
   createHexagonCoordinates,
   createRectangleCoordinates,
 } from "../cartogram/shape-generator.js";
-
+const PACK_WORKER_URL = new URL('./pack-worker.js', import.meta.url);
 /**
  * @param {Array} features - Finest-level features (e.g. villages).
  * @param {Object} options
@@ -71,6 +70,9 @@ import {
  *   island blocks so islands read as separated (default 1; 0 disables).
  * @param {string} [options.orderMode] - Advanced treemap ordering override.
  * @param {string} [options.dirPolicy] - Advanced treemap direction override.
+ * @param {number} [options.concurrency] - Worker-thread parallelism for the
+ *   independent per-shape packing MIPs (default 0 = auto in Node; browser
+ *   falls back to sequential). Set 1 to force sequential.
  * @returns {Promise<Object>} { assignments, shapes, meta }
  *   - assignments: each leaf + local gridX/gridY within its shape + `_shape`
  *     (the parent shape: id, type, bbox, polygon, ...) + `_path`.
@@ -102,6 +104,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     minFactor = 1,
     orderMode = null,
     dirPolicy = null,
+    concurrency = 0,
   } = options;
 
   if (levels.length === 0)
@@ -202,18 +205,13 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     smallBlockThreshold,
   };
 
-  for (const n of containers) {
+  const buildAssignments = (n, packed) => {
     const shape = n._shape;
+    const out = [];
     if (shape.type === "rect") {
-      const packed = await packLeavesIntoBlock(
-        n.children,
-        shape.block,
-        packOpts,
-      );
       for (const p of packed) {
         if (p._subdivided) {
-          // block was too small — cells are sub-cells within the block (safety net)
-          assignments.push({
+          out.push({
             ...p.item,
             _shapeId: n.id,
             _shape: shape,
@@ -225,7 +223,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
             _path: [n.id],
           });
         } else {
-          assignments.push({
+          out.push({
             ...p.item,
             _shapeId: n.id,
             _shape: shape,
@@ -238,14 +236,8 @@ export async function allocateMosaicHierarchical(features, options = {}) {
         }
       }
     } else {
-      const packed = await packIntoShape(n.children, shape, {
-        mip,
-        xAccessor,
-        yAccessor,
-        compactness,
-      });
       for (const p of packed) {
-        assignments.push({
+        out.push({
           ...p.item,
           _shapeId: n.id,
           _shape: shape,
@@ -257,6 +249,109 @@ export async function allocateMosaicHierarchical(features, options = {}) {
         });
       }
     }
+    return out;
+  };
+
+  const packOne = async (n) => {
+    const shape = n._shape;
+    if (shape.type === "rect") {
+      return packLeavesIntoBlock(n.children, shape.block, packOpts);
+    }
+    return packIntoShape(n.children, shape, { mip, xAccessor, yAccessor, compactness });
+  };
+
+  const packSequential = async () => {
+    for (const n of containers) {
+      assignments.push(...buildAssignments(n, await packOne(n)));
+    }
+  };
+
+  const packParallel = async () => {
+    const tasks = containers.map((n, index) => ({
+      index,
+      payload: {
+        mode: n._shape.type === "rect" ? "block" : "shape",
+        block: n._shape.block,
+        shape:
+          n._shape.type === "rect"
+            ? undefined
+            : { bbox: n._shape.bbox, polygon: n._shape.polygon },
+        children: n.children.map((c) => ({
+          id: c.id,
+          x: xAccessor(c.item),
+          y: yAccessor(c.item),
+        })),
+        compactness,
+        smallBlockThreshold,
+      },
+    }));
+    const results = await runWorkerPool(tasks, PACK_WORKER_URL, { concurrency });
+    containers.forEach((n, i) => {
+      const shape = n._shape;
+      if (shape.type !== "rect" && results[i].length) {
+        // worker computed the shape's grid dims on its own copy → copy back
+        shape.shapeRows = results[i][0].gridRows;
+        shape.shapeCols = results[i][0].gridCols;
+      }
+      for (const r of results[i]) {
+        const child = n.children.find((c) => c.id === r.childId);
+        if (shape.type === "rect") {
+          if (r.subdivided) {
+            assignments.push({
+              ...child.item,
+              _shapeId: n.id,
+              _shape: shape,
+              gridX: r.gridX,
+              gridY: r.gridY,
+              shapeRows: r.gridRows,
+              shapeCols: r.gridCols,
+              _subdivided: true,
+              _path: [n.id],
+            });
+          } else {
+            assignments.push({
+              ...child.item,
+              _shapeId: n.id,
+              _shape: shape,
+              gridX: r.gridX - shape.block.c0,
+              gridY: r.gridY - shape.block.r0,
+              shapeRows: r.gridRows,
+              shapeCols: r.gridCols,
+              _path: [n.id],
+            });
+          }
+        } else {
+          assignments.push({
+            ...child.item,
+            _shapeId: n.id,
+            _shape: shape,
+            gridX: r.gridX,
+            gridY: r.gridY,
+            shapeRows: r.gridRows,
+            shapeCols: r.gridCols,
+            _path: [n.id],
+          });
+        }
+      }
+    });
+  };
+
+  const useParallel =
+    concurrency !== 1 &&
+    containers.length > 4 &&
+    typeof process !== "undefined" &&
+    process.versions &&
+    typeof process.versions.node !== "undefined"; // Node only
+
+  if (useParallel) {
+    try {
+      await packParallel();
+    } catch {
+      assignments.length = 0;
+      await packSequential();
+    }
+  } else {
+    await packSequential();
   }
 
   const shapes = containers.map((n) => n._shape);
@@ -540,7 +635,7 @@ function layoutDorlingMosaic(
 // ---------------------------------------------------------------------------
 // Pack leaves into a non-rectangular shape (masked local grid)
 // ---------------------------------------------------------------------------
-async function packIntoShape(children, shape, opts) {
+export async function packIntoShape(children, shape, opts) {
   const { mip, xAccessor, yAccessor, compactness } = opts;
   const bbox = shape.bbox;
   const bounds = {

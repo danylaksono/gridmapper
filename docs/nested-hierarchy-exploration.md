@@ -579,9 +579,7 @@ at n=6000) because pruning is most effective for well-separated layouts.
 
 ### Remaining M3 items (not yet done)
 
-- **Parallel leaf MIPs** — the 7,276 kecamatan packing solves are independent;
-  a bounded concurrency pool (Web Workers / worker_threads) would cut the
-  ~15–50 s packing time several-fold.
+- ~~**Parallel leaf MIPs**~~ — **done, see §13**.
 - **Centroid-only inputs** — precompute per-level centroid/bbox tables so the
   166 MB village polygon payload is never parsed just to allocate; the
   allocation only needs centroids + parent codes.
@@ -589,3 +587,38 @@ at n=6000) because pruning is most effective for well-separated layouts.
 
 Benchmark: `scripts/benchmark-barneshut.js`. Probe: `scripts/probe-mosaic.js
 [cap] [shapeType] [--render]`.
+
+---
+
+## 13. M3 — parallel leaf packing (worker_threads)
+
+The 7,276 kecamatan packing solves are independent, but `glpk.js`'s `solve()`
+is **synchronous**, so a JS-side concurrency pool would give no real speedup.
+Real parallelism uses **worker_threads** — each worker has its own V8 isolate
+and its own GLPK.js WASM instance.
+
+### What was added
+
+- `src/utils/parallel.js` — `runWorkerPool(tasks, workerUrl, { concurrency })`.
+  Dynamic `import("worker_threads")` so the browser bundle is unaffected;
+  callers fall back to sequential when workers are unavailable.
+- `src/hierarchy/pack-worker.js` — worker entry that packs leaves into a
+  block (`packLeavesIntoBlock`) or a shape (`packIntoShape`) with its own GLPK.
+- Both allocators now run the independent leaf-packing solves through the pool:
+  - `allocateHierarchical` — two-phase: (A) assign blocks to every node via the
+    treemap, then (B) pack all leaf-parents in parallel.
+  - `allocateMosaicHierarchical` — parallel per-shape packing (rect + circle/hex).
+  - `concurrency` option (default 0 = auto `min(8, cpuCount-1)` in Node;
+    `1` forces sequential; browser always sequential).
+
+### Measured
+
+| case | sequential | parallel (4) | speedup | output identical |
+|---|---:|---:|---:|:--:|
+| hierarchical, 12,000 villages | 5,794 ms | 2,208 ms | **2.6×** | ✓ |
+| mosaic rect, 12,000 villages | 5,571 ms | 2,172 ms | **2.6×** | ✓ |
+| mosaic circle, 10,000 (200 iter) | 14,376 ms | 11,876 ms | **1.2×** | ✓ |
+| full rect mosaic, 83,518 | ~17–50 s | **~12.7 s** | 1.4–4× | ✓ |
+
+Output is **deterministically identical** to the sequential path (task order
+and per-parent child order are preserved).
