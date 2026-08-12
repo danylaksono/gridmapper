@@ -15,6 +15,12 @@ export { createGridGeoJson, createPointsGeoJson, projectGeoJson } from './utils/
 export { computeAdjacencyGraph } from './utils/adjacency-graph.js';
 export { embedGraph } from './utils/graph-embed.js';
 
+// Hierarchical / nested allocation (grid-in-grid)
+export { allocateHierarchical } from './hierarchy/hierarchical-allocator.js';
+export { buildHierarchy, flattenLeaves, subtreeLeafCount } from './hierarchy/hierarchy-tree.js';
+export { gridTreemap, rectArea } from './hierarchy/grid-treemap.js';
+export { packLeavesIntoBlock } from './hierarchy/footprint-packer.js';
+
 // Dorling/Demers Cartogram exports
 export { 
     createDorlingCartogram, 
