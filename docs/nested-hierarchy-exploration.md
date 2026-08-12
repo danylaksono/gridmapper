@@ -462,7 +462,7 @@ or the shape mask excludes out-of-polygon cells) and validated point-in-polygon.
   full 7,275-kecamatan scale is slow (a few minutes). This is exactly the
   Barnes–Hut work planned under **M3**. The rect mosaic scales to 83k in ~17 s.
 - The mosaic is currently at the leaf-parent level (kecamatan); "mosaic nested
-  inside a coarser treemap block" (hybrid) is a future extension.
+  inside a coarser treemap block" (hybrid) is now implemented — **see §15**.
 - API sketch:
 
 ```js
@@ -689,4 +689,81 @@ const enriched = mergeAssignmentsToFeatures(
   res.assignments,
   { idAccessor: (d) => d.properties.code, assignmentIdOf: (a) => a.id },
 );
+```
+
+---
+
+## 15. M2b — mosaic nested inside a coarser treemap block (hybrid)
+
+M1 (grid-in-grid) gives perfect nesting but the leaf-parent shapes are always
+rectangles. M2 (mosaic) gives pretty value-scaled shapes but lays the whole
+leaf-parent level out as ONE flat mosaic — losing provinsi/kabupaten nesting
+and geography. The hybrid keeps both:
+
+```
+provinsi blocks        (treemap)
+  └─ kabupaten blocks  (treemap)   ← "group" level
+       └─ kecamatan mosaic (rect | circle | hex) INSIDE each kabupaten block
+            └─ villages packed one-per-cell into each kecamatan shape
+```
+
+### What was added
+
+- `src/hierarchy/hybrid-allocator.js` — `allocateHybridHierarchical(features,
+{ levels, shapeType: 'rect'|'circle'|'hex', ... })`.
+  - Coarse levels (above `levels.length - 2`) are nested treemap blocks,
+    geography-aware and **island-aware at the root level** (two-level islands →
+    members layout with a `seaGutter` between landmasses — the top grid is
+    inflated by gutter headroom so the gutters never cause underfill).
+  - Each group's children are laid out as a **local** value-scaled mosaic
+    inside the group's block: `rect` → local treemap (area ∝ `weightOf`, floored
+    by descendant count); `circle`/`hex` → local Dorling (`layoutDorlingMosaic`)
+    then **uniformly scaled/translated to fit the block** (fit clamps so even
+    the largest shape's diameter fits). Groups with <2 children or a degenerate
+    geographic span fall back to rect.
+  - Leaves are packed into each shape (rect → footprint-packer, circle/hex →
+    `packIntoShape`), sequential or parallel via the worker pool (`concurrency`).
+  - Output: `{ assignments, shapes, groups, hierarchy, meta }`. Assignments
+    carry `_shape` + `_path` (full ancestor id path, e.g.
+    `[provinsi, kabupaten, kecamatan]`).
+- `layoutDorlingMosaic` is now exported from `mosaic-allocator.js` for reuse.
+- Exported from `src/index.js`. Probe: `scripts/probe-hybrid.js [cap]
+[shapeType] [--render out.svg]`.
+
+### Measured (full 83,518 villages / 521 kabupaten groups / 7,276 kecamatan)
+
+| shapeType |    time | village-in-shape | shape-in-block | group-in-parent | islands |
+| --------- | ------: | ---------------: | -------------: | --------------: | ------: |
+| rect      | ~11.5 s |  83,518/83,518 ✓ |  7,276/7,276 ✓ |       521/521 ✓ |      35 |
+| circle    | ~13.7 s |  83,518/83,518 ✓ |  7,276/7,276 ✓ |       521/521 ✓ |      35 |
+| hex       | ~12.9 s |  83,518/83,518 ✓ |  7,276/7,276 ✓ |       521/521 ✓ |      35 |
+
+100% containment at every level, guaranteed by construction (local treemap /
+Dorling-fit inside the group block, village cells inside the shape).
+
+### Notes
+
+- **Circle/hex at full scale is now fast (~13 s)** vs. the flat M2 mosaic's
+  ~2 min: the Dorling runs per small group (~14 kecamatan avg) instead of over
+  all 7,276 kecamatan globally.
+- Only the ROOT treemap is island-aware; below that, nesting relies on the
+  geographic ordering. Per-level island gutters are a possible refinement.
+- Renders: `demo/hybrid-rect.svg`, `demo/hybrid-circle.svg`,
+  `demo/hybrid-hex.svg`.
+
+### API
+
+```js
+const res = await allocateHybridHierarchical(villages, {
+  levels: ["provinsi_code", "kab_kota_code", "kecamatan_code"],
+  shapeType: "circle", // 'rect' | 'circle' | 'hex'
+  weightOf: (d) => d.population, // local shape area ∝ population
+  xAccessor: (d) => d.x,
+  yAccessor: (d) => d.y,
+  mip,
+  seaGapKm: 30,
+  seaGutter: 1,
+});
+// res.shapes[i]: kecamatan shape (rect → .block; circle/hex → .bbox/.polygon)
+// res.assignments[i]: { ...village, _shape, _path: [provinsi, kabupaten, kecamatan], gridX, gridY }
 ```

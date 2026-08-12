@@ -526,7 +526,7 @@ function insetRect(r, g) {
 // ---------------------------------------------------------------------------
 // Dorling mosaic (circles / hexagons via force simulation)
 // ---------------------------------------------------------------------------
-function layoutDorlingMosaic(
+export function layoutDorlingMosaic(
   containers,
   shapeType,
   iterations,

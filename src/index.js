@@ -25,6 +25,7 @@ export { embedGraph } from "./utils/graph-embed.js";
 // Hierarchical / nested allocation (grid-in-grid)
 export { allocateHierarchical } from "./hierarchy/hierarchical-allocator.js";
 export { allocateMosaicHierarchical } from "./hierarchy/mosaic-allocator.js";
+export { allocateHybridHierarchical } from "./hierarchy/hybrid-allocator.js";
 export {
   buildHierarchy,
   flattenLeaves,
