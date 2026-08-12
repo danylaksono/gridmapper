@@ -17,10 +17,10 @@
  * block's integer extent, so every assigned cell lies inside it.
  */
 
-import { GridMapper } from '../core/grid-mapper.js';
-import { buildHierarchy } from './hierarchy-tree.js';
-import { gridTreemap, rectArea } from './grid-treemap.js';
-import { packLeavesIntoBlock } from './footprint-packer.js';
+import { GridMapper } from "../core/grid-mapper.js";
+import { buildHierarchy } from "./hierarchy-tree.js";
+import { gridTreemap, rectArea } from "./grid-treemap.js";
+import { packLeavesIntoBlock } from "./footprint-packer.js";
 
 /**
  * @param {Array} features - Finest-level features (e.g. villages).
@@ -49,98 +49,122 @@ import { packLeavesIntoBlock } from './footprint-packer.js';
  *   - meta: { mode, rows, cols, levels, totalLeaves, count, slack }
  */
 export async function allocateHierarchical(features, options = {}) {
-    const {
-        idAccessor = d => d.code,
-        levels = [],
-        xAccessor = d => d.x,
-        yAccessor = d => d.y,
-        mip = null,
-        mapper = new GridMapper(),
-        compactness = 0.5,
-        slack = 1.35,
-        minFactor = 1,
-        rows = null,
-        cols = null,
-        smallBlockThreshold = 6,
-        weightOf = () => 1,
-        onProgress = null
-    } = options;
+  const {
+    idAccessor = (d) => d.code,
+    levels = [],
+    xAccessor = (d) => d.x,
+    yAccessor = (d) => d.y,
+    mip = null,
+    mapper = new GridMapper(),
+    compactness = 0.5,
+    slack = 1.35,
+    minFactor = 1,
+    rows = null,
+    cols = null,
+    smallBlockThreshold = 6,
+    weightOf = () => 1,
+    onProgress = null,
+  } = options;
 
-    if (levels.length === 0) throw new Error('allocateHierarchical: options.levels is required');
-    if (!mip) throw new Error('allocateHierarchical: options.mip is required');
+  if (levels.length === 0)
+    throw new Error("allocateHierarchical: options.levels is required");
+  if (!mip) throw new Error("allocateHierarchical: options.mip is required");
 
-    const coordsOf = f => [xAccessor(f), yAccessor(f)];
-    const roots = buildHierarchy(features, { idAccessor, levels, coordsOf, weightOf });
+  const coordsOf = (f) => [xAccessor(f), yAccessor(f)];
+  const roots = buildHierarchy(features, {
+    idAccessor,
+    levels,
+    coordsOf,
+    weightOf,
+  });
 
-    // --- Top-level global grid sizing ---
-    const totalLeaves = roots.reduce((s, r) => s + r.leafCount, 0);
-    const cellBudget = Math.max(totalLeaves, roots.length);
+  // --- Top-level global grid sizing ---
+  const totalLeaves = roots.reduce((s, r) => s + r.leafCount, 0);
+  const cellBudget = Math.max(totalLeaves, roots.length);
 
-    let gridRows = rows;
-    let gridCols = cols;
-    if (!gridRows || !gridCols) {
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const r of roots) {
-            const [x, y] = r.centroid;
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
-        }
-        const aspect = Math.max(0.25, Math.min(4, (maxX - minX) / Math.max(1e-9, maxY - minY)));
-        const cells = Math.ceil(cellBudget * slack);
-        gridCols = Math.max(1, Math.round(Math.sqrt(cells * aspect)));
-        gridRows = Math.max(1, Math.ceil(cells / gridCols));
-        while (gridRows * gridCols < cells) gridRows++;
+  let gridRows = rows;
+  let gridCols = cols;
+  if (!gridRows || !gridCols) {
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (const r of roots) {
+      const [x, y] = r.centroid;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const aspect = Math.max(
+      0.25,
+      Math.min(4, (maxX - minX) / Math.max(1e-9, maxY - minY)),
+    );
+    const cells = Math.ceil(cellBudget * slack);
+    gridCols = Math.max(1, Math.round(Math.sqrt(cells * aspect)));
+    gridRows = Math.max(1, Math.ceil(cells / gridCols));
+    while (gridRows * gridCols < cells) gridRows++;
+  }
+
+  const globalRect = { r0: 0, c0: 0, r1: gridRows - 1, c1: gridCols - 1 };
+  const treemapOpts = { weightOf: (n) => n.leafCount, minFactor };
+  const rootBlocks = gridTreemap(roots, globalRect, treemapOpts);
+  for (const root of roots) root._block = rootBlocks.get(root.id);
+
+  const assignments = [];
+  const packOpts = {
+    mapper,
+    mip,
+    xAccessor,
+    yAccessor,
+    compactness,
+    smallBlockThreshold,
+  };
+
+  const walk = async (node, block, path) => {
+    node._block = block;
+    const childPath = [...path, node.id];
+
+    if (
+      node.children.length > 0 &&
+      node.children.every((c) => c.children.length === 0)
+    ) {
+      // Node's children are leaves → pack one cell each.
+      const packed = await packLeavesIntoBlock(node.children, block, packOpts);
+      for (const p of packed) {
+        assignments.push({ ...p, _path: childPath, _block: block });
+      }
+      return;
     }
 
-    const globalRect = { r0: 0, c0: 0, r1: gridRows - 1, c1: gridCols - 1 };
-    const treemapOpts = { weightOf: n => n.leafCount, minFactor };
-    const rootBlocks = gridTreemap(roots, globalRect, treemapOpts);
-    for (const root of roots) root._block = rootBlocks.get(root.id);
-
-    const assignments = [];
-    const packOpts = { mapper, mip, xAccessor, yAccessor, compactness, smallBlockThreshold };
-
-    const walk = async (node, block, path) => {
-        node._block = block;
-        const childPath = [...path, node.id];
-
-        if (node.children.length > 0 && node.children.every(c => c.children.length === 0)) {
-            // Node's children are leaves → pack one cell each.
-            const packed = await packLeavesIntoBlock(node.children, block, packOpts);
-            for (const p of packed) {
-                assignments.push({ ...p, _path: childPath, _block: block });
-            }
-            return;
-        }
-
-        const subBlocks = gridTreemap(node.children, block, treemapOpts);
-        for (const child of node.children) {
-            await walk(child, subBlocks.get(child.id), childPath);
-        }
-    };
-
-    let done = 0;
-    const rootCount = roots.length;
-    for (const root of roots) {
-        await walk(root, rootBlocks.get(root.id), []);
-        done++;
-        if (onProgress) onProgress(done / rootCount);
+    const subBlocks = gridTreemap(node.children, block, treemapOpts);
+    for (const child of node.children) {
+      await walk(child, subBlocks.get(child.id), childPath);
     }
+  };
 
-    return {
-        assignments,
-        hierarchy: roots,
-        meta: {
-            mode: 'grid-in-grid',
-            rows: gridRows,
-            cols: gridCols,
-            levels,
-            totalLeaves,
-            count: assignments.length,
-            slack,
-            minFactor,
-            gridCells: gridRows * gridCols,
-            usedCells: new Set(assignments.map(a => `${a.gridY}_${a.gridX}`)).size
-        }
-    };
+  let done = 0;
+  const rootCount = roots.length;
+  for (const root of roots) {
+    await walk(root, rootBlocks.get(root.id), []);
+    done++;
+    if (onProgress) onProgress(done / rootCount);
+  }
+
+  return {
+    assignments,
+    hierarchy: roots,
+    meta: {
+      mode: "grid-in-grid",
+      rows: gridRows,
+      cols: gridCols,
+      levels,
+      totalLeaves,
+      count: assignments.length,
+      slack,
+      minFactor,
+      gridCells: gridRows * gridCols,
+      usedCells: new Set(assignments.map((a) => `${a.gridY}_${a.gridX}`)).size,
+    },
+  };
 }

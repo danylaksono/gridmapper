@@ -11,12 +11,12 @@ landscape, and a concrete design proposal.
 
 Source folder: `D:\personal\github\kopdes\geo\geojson`
 
-| Level      | # features | File size | Parent linkage (in properties)          |
-|------------|-----------:|----------:|-----------------------------------------|
-| provinsi   |         38 |    4.5 MB | —                                       |
-| kab_kota   |        514 |    9.3 MB | `provinsi_code`                         |
-| kecamatan  |      7,275 |   34 MB   | `provinsi_code`, `kab_kota_code`        |
-| kel_desa   |     83,518 |  166 MB   | `provinsi_code`, `kab_kota_code`, `kecamatan_code` |
+| Level     | # features | File size | Parent linkage (in properties)                     |
+| --------- | ---------: | --------: | -------------------------------------------------- |
+| provinsi  |         38 |    4.5 MB | —                                                  |
+| kab_kota  |        514 |    9.3 MB | `provinsi_code`                                    |
+| kecamatan |      7,275 |     34 MB | `provinsi_code`, `kab_kota_code`                   |
+| kel_desa  |     83,518 |    166 MB | `provinsi_code`, `kab_kota_code`, `kecamatan_code` |
 
 Each child feature already carries its ancestor codes, so building the tree is
 trivial (group by `kecamatan_code`, then by `kab_kota_code`, then by
@@ -38,12 +38,12 @@ scaling (Section 4).
 engine on real data. The MIP engine (GLPK.js, WASM) and the Dorling force
 simulation (O(n²) per iteration):
 
-| Level     | #feat | MIP grid allocation        | Dorling (400 iter) |
-|-----------|------:|----------------------------|--------------------|
-| provinsi  |    38 | **61 ms** ✅                | 24 ms ✅           |
-| kab_kota  |   514 | **~65 s** ⚠️               | 0.9 s ✅           |
-| kecamatan | 2,000 | **GLPK crash: "no memory available"** ❌ | 13 s ⚠️ |
-| kel_desa  | 2,000 | **GLPK crash** ❌           | 12.5 s ⚠️          |
+| Level     | #feat | MIP grid allocation                      | Dorling (400 iter) |
+| --------- | ----: | ---------------------------------------- | ------------------ |
+| provinsi  |    38 | **61 ms** ✅                             | 24 ms ✅           |
+| kab_kota  |   514 | **~65 s** ⚠️                             | 0.9 s ✅           |
+| kecamatan | 2,000 | **GLPK crash: "no memory available"** ❌ | 13 s ⚠️            |
+| kel_desa  | 2,000 | **GLPK crash** ❌                        | 12.5 s ⚠️          |
 
 Diagnosis:
 
@@ -71,15 +71,17 @@ nested-layout use case needs.
 There is substantial prior work. The most directly relevant:
 
 ### 3.1 Grid / mosaic cartograms (what this repo already is)
+
 - **Jo Wood, "Grid Map Allocation"** (Observable notebook, 2022) — the MIP-based
   grid-map allocation this repo is built on. Tile/mosaic cartograms: every
   region becomes an equal-size tile (square/hexagon) arranged to approximate
   geography.
-- Tile grid maps are also called *gridded cartograms*, *mosaic cartograms*.
+- Tile grid maps are also called _gridded cartograms_, _mosaic cartograms_.
   Automatic layout preserving topology is an active topic (e.g. Eurostat,
   Japanese prefecture tile maps); most published layouts are still hand-tuned.
 
 ### 3.2 Rectangular cartograms (the "mosaic" parent level)
+
 - **van Dijk, van Kreveld, Speckmann & Wolff, "RecMap: Rectangular Map
   Approximations"** (CGTA) — approximates each region by a rectangle in a
   mosaic, area ∝ value, preserving adjacencies. Implemented in the R `recmap`
@@ -93,16 +95,17 @@ There is substantial prior work. The most directly relevant:
   (ISPRS IJGI, 2025)** — survey + new construction method.
 
 ### 3.3 Nested / hierarchical cartograms (the core of this exploration)
+
 - **Buchin, Speckmann & Verdonschot, "Adjacency-Preserving Spatial Treemaps"
-  (CGTA 2013)** — the theoretical anchor. Rectangular layouts with a *hierarchical
-  structure*: children nested inside parents while (when possible) preserving
+  (CGTA 2013)** — the theoretical anchor. Rectangular layouts with a _hierarchical
+  structure_: children nested inside parents while (when possible) preserving
   adjacency between siblings. Closely related to rectangular cartograms. This is
   precisely "village rectangles inside a kecamatan rectangle, kecamatan inside a
   kabupaten rectangle".
 - **Wang et al., "Hierarchical Data Visualization Based on Rectangular
   Cartograms" (ISPRS IJGI 14(6):215, 2025)** — the closest direct match to your
   Case B: (1) build a rectangular cartogram (mosaic) of the top level, then
-  (2) run a *treemap layout inside each rectangle* to encode the child hierarchy.
+  (2) run a _treemap layout inside each rectangle_ to encode the child hierarchy.
 - **Balzer, Deussen & Lewerentz, "Voronoi Treemaps" (SoftVis 2005)** — recursive
   subdivision of **any convex container** (circle, hexagon, polygon) into child
   cells, area ∝ weight. Ideal for "villages inside a hexagon-shaped kecamatan"
@@ -114,6 +117,7 @@ There is substantial prior work. The most directly relevant:
   (already implemented).
 
 ### 3.4 Large-N scalability (for the force-sim side)
+
 - **Barnes & Hut, "A hierarchical O(N log N) force-calculation algorithm"
   (Nature 1986)** — quadtree-based n-body approximation. The standard way to take
   Dorling/force layouts from O(n²) to O(n log n); d3-force and most graph-drawing
@@ -125,16 +129,17 @@ There is substantial prior work. The most directly relevant:
   speedup.
 
 ### 3.5 Takeaway
+
 The exact combination you describe — **"village cells inside kecamatan cells
 where the kecamatan layer is itself a mosaic"** — is a known-but-still-active
 research topic. The clean formulation is:
 
-> **Strategy 1 (grid-in-grid / nested tile grid map):** parents are *blocks of
-> equal unit cells*; children are packed inside the parent's block (treemap-style
+> **Strategy 1 (grid-in-grid / nested tile grid map):** parents are _blocks of
+> equal unit cells_; children are packed inside the parent's block (treemap-style
 > or local MIP). Every level stays on the same regular grid.
 >
-> **Strategy 2 (cartogram + treemap):** parents are *variable-size mosaic
-> shapes* (rectangles from RecMap/Demers, or circles/hexagons from Dorling);
+> **Strategy 2 (cartogram + treemap):** parents are _variable-size mosaic
+> shapes_ (rectangles from RecMap/Demers, or circles/hexagons from Dorling);
 > children are laid out inside each parent shape (treemap for rectangles, Voronoi
 > treemap for arbitrary shapes).
 
@@ -156,12 +161,12 @@ and its child features, produce child cells/shapes that:
 Implementation options for a rectangular/rect-grid footprint:
 
 - **Local grid + translation (recommended, reuses existing MIP):**
-  - Normalize the children's geographic coordinates into a *local* grid whose
+  - Normalize the children's geographic coordinates into a _local_ grid whose
     extent is the parent footprint (using the existing
     `normalizePointsToGrid` + bounds, but with the output domain = footprint).
   - Run the existing `allocate`/`solveAdvancedAllocation` on the local grid.
   - Map local cells back to global coordinates (`global = footprint.offset +
-    local`). Containment is guaranteed by construction because the local grid is
+local`). Containment is guaranteed by construction because the local grid is
     inscribed in the footprint.
 - **Squarified treemap** (Bruls et al. 2000) for rectangular footprints when the
   child weight (e.g. population) should control child cell area — produces
@@ -231,16 +236,16 @@ API sketch:
 ```js
 const result = await mapper.allocateHierarchical(data, {
   // tree shape
-  idAccessor: d => d.code,
-  parentAccessor: d => d.kecamatan_code,   // omit for root level
+  idAccessor: (d) => d.code,
+  parentAccessor: (d) => d.kecamatan_code, // omit for root level
   // per-level strategy
   levels: [
-    { field: 'provinsi_code', mode: 'grid-in-grid' },
-    { field: 'kab_kota_code', mode: 'grid-in-grid' },
-    { field: 'kecamatan_code', mode: 'grid-in-grid' }, // or 'mosaic-treemap'
+    { field: "provinsi_code", mode: "grid-in-grid" },
+    { field: "kab_kota_code", mode: "grid-in-grid" },
+    { field: "kecamatan_code", mode: "grid-in-grid" }, // or 'mosaic-treemap'
   ],
-  weightAccessor: d => d.population,        // drives parent area-encoding
-  valueAccessor: d => d.population,         // drives child cell size (optional)
+  weightAccessor: (d) => d.population, // drives parent area-encoding
+  valueAccessor: (d) => d.population, // drives child cell size (optional)
   mip: () => new GLPKSolver(glpk),
   // output: every feature gets global cell/center + full ancestor cell path
 });
@@ -293,21 +298,22 @@ A working prototype was built and validated on the real Indonesia data.
 
 New module `src/hierarchy/` (exported from `src/index.js`):
 
-| File | Purpose |
-|---|---|
-| `hierarchy-tree.js` | Builds the parent→children tree from per-level parent-code fields (`buildHierarchy`). |
-| `grid-treemap.js` | Exact integer-cell, guillotine/binary-split treemap (`gridTreemap`). Variable-size rectangular blocks, area ∝ weight, each block ≥ its minimum. |
-| `footprint-packer.js` | Packs leaf features one-per-cell inside a parent block, reusing the existing MIP engine on a local grid (`packLeavesIntoBlock`); greedy for tiny blocks; sub-grid fallback for under-sized blocks. |
-| `hierarchical-allocator.js` | Recursive driver `allocateHierarchical`: treemap the coarsest level on the global grid, then each level subdivides its parent's block, leaves are MIP-packed. Containment by construction. |
+| File                        | Purpose                                                                                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hierarchy-tree.js`         | Builds the parent→children tree from per-level parent-code fields (`buildHierarchy`).                                                                                                              |
+| `grid-treemap.js`           | Exact integer-cell, guillotine/binary-split treemap (`gridTreemap`). Variable-size rectangular blocks, area ∝ weight, each block ≥ its minimum.                                                    |
+| `footprint-packer.js`       | Packs leaf features one-per-cell inside a parent block, reusing the existing MIP engine on a local grid (`packLeavesIntoBlock`); greedy for tiny blocks; sub-grid fallback for under-sized blocks. |
+| `hierarchical-allocator.js` | Recursive driver `allocateHierarchical`: treemap the coarsest level on the global grid, then each level subdivides its parent's block, leaves are MIP-packed. Containment by construction.         |
 
 API:
 
 ```js
 const result = await mapper.allocateHierarchical(villages, {
-  levels: ['provinsi_code', 'kab_kota_code', 'kecamatan_code'], // coarse → fine
-  xAccessor: d => d.x, yAccessor: d => d.y,
+  levels: ["provinsi_code", "kab_kota_code", "kecamatan_code"], // coarse → fine
+  xAccessor: (d) => d.x,
+  yAccessor: (d) => d.y,
   mip: () => new GLPKSolver(glpk),
-  compactness: 0.5
+  compactness: 0.5,
 });
 // result.assignments[i] = { ...village, gridX, gridY, _path: [provId, kabId, kecId], _block }
 // result.hierarchy   = tree of nodes each with a `_block` rect
@@ -319,12 +325,12 @@ Validation scripts: `scripts/probe-hierarchy.js` (timing + containment),
 
 ### Measured results (real data)
 
-| Level | # features | Hierarchical allocator | Old engine |
-|---|---:|---:|---:|
-| provinsi | 38 | ~60 ms | 61 ms |
-| kab_kota | 514 | — (same engine, ~65 s baseline) | ~65 s |
-| kecamatan (as leaves) | 7,275 | **~1.7 s** ✅ | GLPK crash |
-| kel_desa (villages) | 83,518 | **~15.3 s** ✅ | intractable |
+| Level                 | # features |          Hierarchical allocator |  Old engine |
+| --------------------- | ---------: | ------------------------------: | ----------: |
+| provinsi              |         38 |                          ~60 ms |       61 ms |
+| kab_kota              |        514 | — (same engine, ~65 s baseline) |       ~65 s |
+| kecamatan (as leaves) |      7,275 |                   **~1.7 s** ✅ |  GLPK crash |
+| kel_desa (villages)   |     83,518 |                  **~15.3 s** ✅ | intractable |
 
 - **Containment: 100%** — every village cell lies inside its kecamatan block,
   which lies inside its kabupaten block, inside its province block (validated
@@ -337,7 +343,7 @@ Validation scripts: `scripts/probe-hierarchy.js` (timing + containment),
 ### Design decisions (learned while building)
 
 1. **Mins = leaf count at every level; slack flows down proportionally.**
-   Applying a per-level `minFactor` to children *breaks* the invariant
+   Applying a per-level `minFactor` to children _breaks_ the invariant
    `sum(child mins) ≤ parent block` (ceil inflation compounds). Instead the
    top-level grid carries the slack (default 1.35×) and each treemap level
    distributes its leftover proportionally, so every level gets ~1.35× headroom.
@@ -367,4 +373,3 @@ Validation scripts: `scripts/probe-hierarchy.js` (timing + containment),
   placement would preserve relative positions better.
 - **Per-level value scaling:** today leaves are one-unit cells; making cell area
   ∝ population (treemap at the leaf level) is a natural extension.
-
