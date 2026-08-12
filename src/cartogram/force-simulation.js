@@ -30,9 +30,17 @@ function randomUnitVector(rng) {
  * Uses simple O(n²) algorithm - suitable for < 500 nodes
  * @param {Array} nodes - Array of node objects with x, y, radius properties
  * @param {number} strength - Repulsion strength (0-1)
+ * @param {Function} [rng] - Random number generator
+ * @param {Object} [options]
+ * @param {Function} [options.islandOf] - (node) => island key. When provided
+ *   with islandGap > 0, nodes from different islands are pushed apart to keep
+ *   a visible sea gap between them (archipelago preservation).
+ * @param {number} [options.islandGap] - Fractional extra separation between
+ *   different islands (e.g. 0.25 → min distance * 1.25). Default 0.
  * @returns {void} Modifies nodes in place
  */
-export function applyPairwiseRepulsion(nodes, strength = 1.0, rng = Math.random) {
+export function applyPairwiseRepulsion(nodes, strength = 1.0, rng = Math.random, options = {}) {
+    const { islandOf = null, islandGap = 0 } = options;
     const n = nodes.length;
     
     for (let i = 0; i < n; i++) {
@@ -44,8 +52,11 @@ export function applyPairwiseRepulsion(nodes, strength = 1.0, rng = Math.random)
             const dy = nodeB.y - nodeA.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Minimum distance to avoid overlap
-            const minDist = nodeA.radius + nodeB.radius;
+            // Minimum distance to avoid overlap (extra gap between islands)
+            let minDist = nodeA.radius + nodeB.radius;
+            if (islandOf && islandGap > 0 && islandOf(nodeA) !== islandOf(nodeB)) {
+                minDist *= (1 + islandGap);
+            }
             
             if (distance < minDist && distance > 0) {
                 // Calculate overlap
@@ -208,10 +219,13 @@ export function runForceSimulation(nodes, options = {}) {
         minRepulsion = 0.5,     // Higher minimum repulsion
         seed = null,
         initialJitter = 0,
+        islandOf = null,        // (node) => island key (archipelago separation)
+        islandGap = 0,          // fractional gap between different islands
         onProgress = null
     } = options;
 
     const rng = createSeededRandom(seed);
+    const repulseOpts = { islandOf, islandGap };
     
     let currentRepulsion = repulsionStrength;
 
@@ -235,7 +249,7 @@ export function runForceSimulation(nodes, options = {}) {
         const repulsionPasses = hasOverlaps(nodes, shapeType) ? 3 : 1;
         for (let pass = 0; pass < repulsionPasses; pass++) {
             if (shapeType === 'circle' || shapeType === 'hexagon') {
-                applyPairwiseRepulsion(nodes, currentRepulsion, rng);
+                applyPairwiseRepulsion(nodes, currentRepulsion, rng, repulseOpts);
             } else {
                 applyRectangularRepulsion(nodes, currentRepulsion, rng);
             }
@@ -262,7 +276,7 @@ export function runForceSimulation(nodes, options = {}) {
     const cleanupIterations = Math.min(500, iterations / 2);
     for (let i = 0; i < cleanupIterations && hasOverlaps(nodes, shapeType); i++) {
         if (shapeType === 'circle' || shapeType === 'hexagon') {
-            applyPairwiseRepulsion(nodes, 1.0, rng);
+            applyPairwiseRepulsion(nodes, 1.0, rng, repulseOpts);
         } else {
             applyRectangularRepulsion(nodes, 1.0, rng);
         }

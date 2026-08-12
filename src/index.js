@@ -24,6 +24,7 @@ export { embedGraph } from "./utils/graph-embed.js";
 
 // Hierarchical / nested allocation (grid-in-grid)
 export { allocateHierarchical } from "./hierarchy/hierarchical-allocator.js";
+export { allocateMosaicHierarchical } from "./hierarchy/mosaic-allocator.js";
 export {
   buildHierarchy,
   flattenLeaves,
@@ -31,7 +32,8 @@ export {
 } from "./hierarchy/hierarchy-tree.js";
 export { gridTreemap, rectArea } from "./hierarchy/grid-treemap.js";
 export { packLeavesIntoBlock } from "./hierarchy/footprint-packer.js";
-export { hilbertIndex, orderByHilbert } from "./hierarchy/spatial-order.js";
+export { hilbertIndex, orderByMorton, orderByHilbert } from "./hierarchy/spatial-order.js";
+export { detectIslands } from "./hierarchy/islands.js";
 
 // Dorling/Demers Cartogram exports
 export {
