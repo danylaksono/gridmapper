@@ -48,8 +48,11 @@ export {
 export {
   runForceSimulation,
   applyPairwiseRepulsion,
+  applyBarnesHutRepulsion,
   applyPositionAnchor,
   applyAdjacencyAttraction,
+  hasOverlaps,
+  hasOverlapsFast,
 } from "./cartogram/force-simulation.js";
 export {
   createCircleCoordinates,

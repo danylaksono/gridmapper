@@ -59,6 +59,8 @@ import {
  * @param {number} [options.seed] - Determinism seed for the Dorling layout (default 1).
  * @param {number} [options.dorlingIterations] - Force-sim iterations (default 800).
  * @param {number} [options.dorlingK] - Fill ratio for the largest shape (default 12).
+ * @param {string} [options.dorlingMethod] - 'auto' | 'pairwise' | 'barneshut'.
+ *   Force-sim repulsion method (default 'auto'; barneshut for > 1500 nodes).
  * @param {Function} [options.islandAccessor] - (feature) => island/landmass id.
  *   When omitted, islands are auto-detected from a `seaGapKm` water-gap threshold.
  * @param {number} [options.seaGapKm] - Water-gap threshold in km for automatic
@@ -91,6 +93,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     seed = 1,
     dorlingIterations = 800,
     dorlingK = 12,
+    dorlingMethod = "auto",
     islandAccessor = null,
     seaGapKm = 30,
     islandGap = 0.25,
@@ -180,6 +183,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
       seed,
       islandInfo,
       islandGap,
+      dorlingMethod,
     );
   } else {
     throw new Error(
@@ -426,6 +430,7 @@ function layoutDorlingMosaic(
   seed,
   islandInfo = null,
   islandGap = 0,
+  method = "auto",
 ) {
   let minX = Infinity,
     maxX = -Infinity,
@@ -471,8 +476,16 @@ function layoutDorlingMosaic(
     n.radius = weightToRadius(containers[i]._area, scaleFactor);
   });
 
+  // Adaptive iterations: for large layouts the force sim converges with far
+  // fewer iterations (overlap reduction is asymptotic). Scales 800 down to
+  // ~100-200 for the full 7,275-kecamatan case.
+  const effIterations =
+    nodes.length > 1500
+      ? Math.max(100, Math.round((iterations * 1000) / nodes.length))
+      : iterations;
+
   runForceSimulation(nodes, {
-    iterations,
+    iterations: effIterations,
     shapeType: shapeType === "hex" ? "hexagon" : "circle",
     repulsionStrength: 1.0,
     anchorStrength: 0.02,
@@ -482,6 +495,7 @@ function layoutDorlingMosaic(
     initialJitter: seed == null ? 0 : 1e-6,
     islandOf: islandInfo ? (n) => n.island : null,
     islandGap,
+    method,
   });
 
   nodes.forEach((n) => {

@@ -534,3 +534,58 @@ Full 83,518-village rect mosaic: **100% containment, 0 underfilled shapes,
   same island stay contiguous.
 - Visuals: `demo/islands-circle.svg`, `demo/islands-rect.svg` (+ `.png`, islands
   color-coded). Probe: `scripts/probe-islands.js [cap] [--render]`.
+
+---
+
+## 12. M3 — scaling hardening (Barnes–Hut force simulation)
+
+### The problem
+
+The Dorling force simulation is O(n²) per iteration (`applyPairwiseRepulsion`),
+which made the full-scale circle/hex mosaic (7,275 kecamatan) take minutes and
+was the main blocker left from M2.
+
+### What was added (`force-simulation.js`)
+
+- **`applyBarnesHutRepulsion`** — a quadtree-accelerated repulsion pass. The
+  interaction is strictly local (only pairs within `r_i + r_j` are pushed), so
+  instead of an approximate n-body force it uses the quadtree purely for
+  **exact pruning**: any subtree whose bounding circle provably cannot reach a
+  node is skipped. Per-pair pushes are computed identically, so the result
+  matches the O(n²) pass (only the pair-processing order differs → tiny float
+  divergence, same convergence). Deterministic.
+  - Safe island-gap pruning: prune iff
+    `dist(i, cell) > (r_i + cell.br) · (1 + islandGap)` (never skips a
+    cross-island overlap).
+- **`hasOverlapsFast`** — exact quadtree-pruned overlap existence check;
+  `hasOverlaps` auto-delegates to it for > 200 circle/hexagon nodes.
+- **`runForceSimulation`** accepts `method: 'auto' | 'pairwise' | 'barneshut'`
+  (default `auto` → Barnes–Hut for > 1500 nodes).
+- `allocateMosaicHierarchical` accepts `dorlingMethod` passthrough and
+  **auto-scales Dorling iterations** for large layouts (800 → ~110 at 7,275
+  kecamatan), since overlap reduction is asymptotic.
+
+### Measured (real data)
+
+| case                                   | pairwise              | barneshut                                    |
+| -------------------------------------- | --------------------- | -------------------------------------------- |
+| circle, 2,734 kecamatan (200 iters)    | ~56 s                 | **~39 s** (1.4×)                             |
+| full 83,518 villages / 7,276 kecamatan | ~7 min (extrapolated) | **~2 min** (100% containment, 0 underfilled) |
+
+Correctness: both methods reduce overlaps to ~the same level and are
+deterministic; the quadtree version resolves overlaps as well or better than
+the O(n²) pass. Synthetic dense stress-tests show larger speedups (up to ~3.4×
+at n=6000) because pruning is most effective for well-separated layouts.
+
+### Remaining M3 items (not yet done)
+
+- **Parallel leaf MIPs** — the 7,276 kecamatan packing solves are independent;
+  a bounded concurrency pool (Web Workers / worker_threads) would cut the
+  ~15–50 s packing time several-fold.
+- **Centroid-only inputs** — precompute per-level centroid/bbox tables so the
+  166 MB village polygon payload is never parsed just to allocate; the
+  allocation only needs centroids + parent codes.
+- Streaming GeoJSON for the input read.
+
+Benchmark: `scripts/benchmark-barneshut.js`. Probe: `scripts/probe-mosaic.js
+[cap] [shapeType] [--render]`.

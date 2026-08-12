@@ -96,6 +96,247 @@ export function applyPairwiseRepulsion(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Barnes-Hut style quadtree acceleration
+//
+// The overlap interaction is strictly LOCAL (only pairs within r_i + r_j are
+// pushed apart), so we use a quadtree purely for PRUNING: any subtree whose
+// bounding circle cannot reach a node is skipped entirely. Per-pair pushes are
+// computed exactly, so results match the O(n²) pairwise pass while cost drops
+// to ~O(n log n). Deterministic (same tree, same pair order).
+// ---------------------------------------------------------------------------
+
+const BH_LEAF_CAP = 32;
+
+function bhBounds(nodes) {
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const nd of nodes) {
+    if (nd.x < minX) minX = nd.x;
+    if (nd.x > maxX) maxX = nd.x;
+    if (nd.y < minY) minY = nd.y;
+    if (nd.y > maxY) maxY = nd.y;
+  }
+  const pad = Math.max(maxX - minX, maxY - minY) * 1e-6 + 1e-9;
+  return { x0: minX - pad, y0: minY - pad, x1: maxX + pad, y1: maxY + pad };
+}
+
+function bhInsert(cell, idx, nodes, radii) {
+  if (cell.children) {
+    const mx = (cell.x0 + cell.x1) / 2;
+    const my = (cell.y0 + cell.y1) / 2;
+    const q = (nodes[idx].x < mx ? 0 : 1) + (nodes[idx].y < my ? 0 : 2);
+    bhInsert(cell.children[q], idx, nodes, radii);
+  } else {
+    cell.leaves = cell.leaves || [];
+    cell.leaves.push(idx);
+    if (cell.leaves.length > BH_LEAF_CAP && cell.x1 - cell.x0 > 1e-12) {
+      const mx = (cell.x0 + cell.x1) / 2;
+      const my = (cell.y0 + cell.y1) / 2;
+      cell.children = [
+        { x0: cell.x0, y0: cell.y0, x1: mx, y1: my },
+        { x0: mx, y0: cell.y0, x1: cell.x1, y1: my },
+        { x0: cell.x0, y0: my, x1: mx, y1: cell.y1 },
+        { x0: mx, y0: my, x1: cell.x1, y1: cell.y1 },
+      ].map((q) => ({
+        ...q,
+        count: 0,
+        leaves: null,
+        children: null,
+        cx: 0,
+        cy: 0,
+        br: 0,
+        maxR: 0,
+      }));
+      const old = cell.leaves;
+      cell.leaves = null;
+      for (const j of old) bhInsert(cell, j, nodes, radii);
+      bhInsert(cell, idx, nodes, radii);
+    }
+  }
+}
+
+function bhStats(cell, nodes, radii) {
+  if (cell.children) {
+    let sx = 0,
+      sy = 0,
+      cnt = 0;
+    for (const c of cell.children) {
+      bhStats(c, nodes, radii);
+      sx += c.cx * c.count;
+      sy += c.cy * c.count;
+      cnt += c.count;
+    }
+    cell.count = cnt;
+    cell.cx = cnt ? sx / cnt : 0;
+    cell.cy = cnt ? sy / cnt : 0;
+    let br = 0;
+    let maxR = 0;
+    for (const c of cell.children) {
+      if (!c.count) continue;
+      br = Math.max(br, Math.hypot(c.cx - cell.cx, c.cy - cell.cy) + c.br);
+      maxR = Math.max(maxR, c.maxR);
+    }
+    cell.br = br;
+    cell.maxR = maxR;
+  } else {
+    const L = cell.leaves || [];
+    cell.count = L.length;
+    let sx = 0,
+      sy = 0,
+      maxR = 0;
+    for (const j of L) {
+      sx += nodes[j].x;
+      sy += nodes[j].y;
+      maxR = Math.max(maxR, radii[j]);
+    }
+    cell.cx = L.length ? sx / L.length : 0;
+    cell.cy = L.length ? sy / L.length : 0;
+    let br = 0;
+    for (const j of L) {
+      br = Math.max(
+        br,
+        Math.hypot(nodes[j].x - cell.cx, nodes[j].y - cell.cy) + radii[j],
+      );
+    }
+    cell.br = br;
+    cell.maxR = maxR;
+  }
+}
+
+function bhBuild(nodes, radii) {
+  const root = {
+    ...bhBounds(nodes),
+    count: 0,
+    leaves: null,
+    children: null,
+    cx: 0,
+    cy: 0,
+    br: 0,
+    maxR: 0,
+  };
+  for (let i = 0; i < nodes.length; i++) bhInsert(root, i, nodes, radii);
+  bhStats(root, nodes, radii);
+  return root;
+}
+
+/**
+ * Visit every potentially-overlapping pair (i, j) with j > i, deterministically.
+ * `fn(i, j)` is called for candidate pairs; callers re-check the exact distance
+ * (the quadtree only prunes provably non-overlapping subtrees). Return true from
+ * `fn` to stop early (used by the boolean overlap check).
+ * @param {number} islandGap - fractional gap; prunes slightly less aggressively
+ *   so cross-island gaps are also resolved.
+ */
+function bhWalk(nodes, radii, islandGap, fn) {
+  const root = bhBuild(nodes, radii);
+  const gapFactor = 1 + (islandGap > 0 ? islandGap : 0);
+  let stop = false;
+  const visit = (cell, i) => {
+    if (stop) return;
+    if (cell.children) {
+      const nd = nodes[i];
+      const d = Math.hypot(cell.cx - nd.x, cell.cy - nd.y);
+      // Safe prune: node i's circle (radius, inflated by the island gap) must
+      // not reach the cell's bounding circle (cell.br covers every node's
+      // position + radius). Never skips a cell that could contain an overlap.
+      if (d > (nd.radius + cell.br) * gapFactor) return;
+      for (const c of cell.children) visit(c, i);
+    } else {
+      const L = cell.leaves;
+      if (!L) return;
+      for (const j of L) {
+        if (j > i && fn(i, j)) {
+          stop = true;
+          return;
+        }
+      }
+    }
+  };
+  for (let i = 0; i < nodes.length && !stop; i++) visit(root, i);
+}
+
+/**
+ * Quadtree-accelerated overlap repulsion for circles/hexagons.
+ * Same push semantics as applyPairwiseRepulsion, O(n log n) expected.
+ * @param {Array} nodes - Node objects with x, y, radius.
+ * @param {number} strength
+ * @param {Function} [rng]
+ * @param {Object} [options] - { islandOf, islandGap } (same as pairwise).
+ * @returns {void} Modifies nodes in place.
+ */
+export function applyBarnesHutRepulsion(
+  nodes,
+  strength = 1.0,
+  rng = Math.random,
+  options = {},
+) {
+  const { islandOf = null, islandGap = 0 } = options;
+  const radii = nodes.map((nd) => nd.radius);
+  bhWalk(nodes, radii, islandGap, (i, j) => {
+    const nodeA = nodes[i];
+    const nodeB = nodes[j];
+    const dx = nodeB.x - nodeA.x;
+    const dy = nodeB.y - nodeA.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    let minDist = nodeA.radius + nodeB.radius;
+    if (islandOf && islandGap > 0 && islandOf(nodeA) !== islandOf(nodeB)) {
+      minDist *= 1 + islandGap;
+    }
+    if (distance < minDist && distance > 0) {
+      const overlap = minDist - distance;
+      const nx = dx / distance;
+      const ny = dy / distance;
+      const massA = nodeA.radius * nodeA.radius;
+      const massB = nodeB.radius * nodeB.radius;
+      const totalMass = massA + massB;
+      const moveA = ((overlap * massB) / totalMass) * strength;
+      const moveB = ((overlap * massA) / totalMass) * strength;
+      nodeA.x -= nx * moveA;
+      nodeA.y -= ny * moveA;
+      nodeB.x += nx * moveB;
+      nodeB.y += ny * moveB;
+    } else if (distance === 0 && minDist > 0) {
+      const dir = randomUnitVector(rng);
+      const push = minDist * 0.5 * strength;
+      nodeA.x -= dir.x * push;
+      nodeA.y -= dir.y * push;
+      nodeB.x += dir.x * push;
+      nodeB.y += dir.y * push;
+    }
+    return false;
+  });
+}
+
+/**
+ * Fast overlap existence check (quadtree-pruned, exact) for circles/hexagons.
+ * Falls back to the O(n²) check for rectangles.
+ * @returns {boolean}
+ */
+export function hasOverlapsFast(nodes, shapeType = "circle") {
+  if (nodes.length < 2) return false;
+  if (shapeType === "circle" || shapeType === "hexagon") {
+    const radii = nodes.map((nd) => nd.radius);
+    let found = false;
+    bhWalk(nodes, radii, 0, (i, j) => {
+      const ndA = nodes[i];
+      const ndB = nodes[j];
+      if (
+        Math.hypot(ndB.x - ndA.x, ndB.y - ndA.y) <
+        (ndA.radius + ndB.radius) * 0.99
+      ) {
+        found = true;
+        return true;
+      }
+      return false;
+    });
+    return found;
+  }
+  return hasOverlaps(nodes, shapeType);
+}
+
 /**
  * Apply rectangular pair-wise repulsion for squares/rectangles
  * @param {Array} nodes - Array of node objects with x, y, width, height properties
@@ -230,11 +471,15 @@ export function runForceSimulation(nodes, options = {}) {
     initialJitter = 0,
     islandOf = null, // (node) => island key (archipelago separation)
     islandGap = 0, // fractional gap between different islands
+    method = "auto", // 'auto' | 'pairwise' | 'barneshut'
     onProgress = null,
   } = options;
 
   const rng = createSeededRandom(seed);
   const repulseOpts = { islandOf, islandGap };
+  // Quadtree (Barnes-Hut) repulsion for large sets; exact pairwise otherwise.
+  const useBH =
+    method === "barneshut" || (method === "auto" && nodes.length > 1500);
 
   let currentRepulsion = repulsionStrength;
 
@@ -258,7 +503,9 @@ export function runForceSimulation(nodes, options = {}) {
     const repulsionPasses = hasOverlaps(nodes, shapeType) ? 3 : 1;
     for (let pass = 0; pass < repulsionPasses; pass++) {
       if (shapeType === "circle" || shapeType === "hexagon") {
-        applyPairwiseRepulsion(nodes, currentRepulsion, rng, repulseOpts);
+        if (useBH)
+          applyBarnesHutRepulsion(nodes, currentRepulsion, rng, repulseOpts);
+        else applyPairwiseRepulsion(nodes, currentRepulsion, rng, repulseOpts);
       } else {
         applyRectangularRepulsion(nodes, currentRepulsion, rng);
       }
@@ -285,7 +532,8 @@ export function runForceSimulation(nodes, options = {}) {
   const cleanupIterations = Math.min(500, iterations / 2);
   for (let i = 0; i < cleanupIterations && hasOverlaps(nodes, shapeType); i++) {
     if (shapeType === "circle" || shapeType === "hexagon") {
-      applyPairwiseRepulsion(nodes, 1.0, rng, repulseOpts);
+      if (useBH) applyBarnesHutRepulsion(nodes, 1.0, rng, repulseOpts);
+      else applyPairwiseRepulsion(nodes, 1.0, rng, repulseOpts);
     } else {
       applyRectangularRepulsion(nodes, 1.0, rng);
     }
@@ -302,6 +550,11 @@ export function runForceSimulation(nodes, options = {}) {
  */
 export function hasOverlaps(nodes, shapeType = "circle") {
   const n = nodes.length;
+
+  // Fast, exact quadtree-pruned check for large circle/hexagon sets.
+  if ((shapeType === "circle" || shapeType === "hexagon") && n > 200) {
+    return hasOverlapsFast(nodes, shapeType);
+  }
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
