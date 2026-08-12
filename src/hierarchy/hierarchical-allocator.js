@@ -43,6 +43,15 @@ import { packLeavesIntoBlock } from "./footprint-packer.js";
  * @param {number|null} [options.cols] - Optional top-level grid cols override.
  * @param {number} [options.smallBlockThreshold] - Greedy pack below this (default 6).
  * @param {Function} [options.weightOf] - (feature) => leaf weight (default 1).
+ * @param {string} [options.order] - 'spatial' (default) or 'input'. Spatial orders
+ *   every treemap level by a spatial key over centroids and follows the geographic
+ *   spread (normalized to the global extent), retaining relative geography much
+ *   better than the raw input order.
+ * @param {string} [options.orderMode] - Advanced: 'input' | 'hilbert' | 'z' | 'xy'
+ *   | 'xyDesc' | 'yx' | 'yxDesc'. Overrides the ordering (default is data-adaptive:
+ *   'xy' for wider-than-tall maps, 'yxDesc' for taller-than-wide).
+ * @param {string} [options.dirPolicy] - Advanced: 'aspect' | 'spread' | 'spreadNorm'
+ *   | 'orderKey'. Overrides the split-direction policy (default 'spreadNorm').
  * @returns {Promise<Object>} { assignments, hierarchy, meta }
  *   - assignments: each leaf feature + global gridX/gridY + _path (ancestor ids) + _block.
  *   - hierarchy: root nodes (each gets a `_block` rect after allocation).
@@ -63,6 +72,9 @@ export async function allocateHierarchical(features, options = {}) {
     cols = null,
     smallBlockThreshold = 6,
     weightOf = () => 1,
+    order = "spatial",
+    orderMode = null,
+    dirPolicy = null,
     onProgress = null,
   } = options;
 
@@ -82,20 +94,21 @@ export async function allocateHierarchical(features, options = {}) {
   const totalLeaves = roots.reduce((s, r) => s + r.leafCount, 0);
   const cellBudget = Math.max(totalLeaves, roots.length);
 
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const r of roots) {
+    const [x, y] = r.centroid;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
   let gridRows = rows;
   let gridCols = cols;
   if (!gridRows || !gridCols) {
-    let minX = Infinity,
-      maxX = -Infinity,
-      minY = Infinity,
-      maxY = -Infinity;
-    for (const r of roots) {
-      const [x, y] = r.centroid;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
     const aspect = Math.max(
       0.25,
       Math.min(4, (maxX - minX) / Math.max(1e-9, maxY - minY)),
@@ -107,7 +120,20 @@ export async function allocateHierarchical(features, options = {}) {
   }
 
   const globalRect = { r0: 0, c0: 0, r1: gridRows - 1, c1: gridCols - 1 };
-  const treemapOpts = { weightOf: (n) => n.leafCount, minFactor };
+  const spatial = order === "spatial";
+  const aspect = (maxX - minX) / Math.max(1e-9, maxY - minY);
+  const treemapOpts = {
+    weightOf: (n) => n.leafCount,
+    minFactor,
+    positionOf: spatial ? (n) => n.centroid : null,
+    orderMode:
+      orderMode ?? (spatial ? (aspect >= 1 ? "xy" : "yxDesc") : "input"),
+    dirPolicy: dirPolicy ?? (spatial ? "spreadNorm" : "aspect"),
+    extent: {
+      x: Math.max(1e-12, maxX - minX),
+      y: Math.max(1e-12, maxY - minY),
+    },
+  };
   const rootBlocks = gridTreemap(roots, globalRect, treemapOpts);
   for (const root of roots) root._block = rootBlocks.get(root.id);
 

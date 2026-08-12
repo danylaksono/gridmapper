@@ -1,3 +1,25 @@
+import { orderByHilbert, orderByMorton } from "./spatial-order.js";
+
+// Sort-key specs for axis-major orders. axis: 0 = x/lon, 1 = y/lat; dir: sort sign.
+const SPEC_ORDER = {
+  xy: [
+    { axis: 0, dir: 1 },
+    { axis: 1, dir: 1 },
+  ],
+  xyDesc: [
+    { axis: 0, dir: -1 },
+    { axis: 1, dir: 1 },
+  ],
+  yx: [
+    { axis: 1, dir: 1 },
+    { axis: 0, dir: 1 },
+  ],
+  yxDesc: [
+    { axis: 1, dir: -1 },
+    { axis: 0, dir: 1 },
+  ],
+};
+
 /**
  * Grid Treemap
  * Lays out weighted items into non-overlapping integer-cell rectangles within
@@ -8,8 +30,10 @@
  *   - every item's rect has area >= its minimum (weight * minFactor),
  *   - items stay strictly inside the block.
  *
- * Items may be passed in a geo-ordered array so the mosaic keeps approximate
- * left→right / top→bottom geography.
+ * Geography retention: pass `positionOf` and items are reordered by a Hilbert
+ * space-filling curve over their positions, and each split's direction follows
+ * the children's geographic spread — so the mosaic keeps approximate relative
+ * positions (spatially ordered treemap, cf. Wood & Dykes 2008).
  *
  * This is the "variable-size parent shape" primitive: a parent with more
  * descendants gets a bigger block, so downstream children have room.
@@ -23,6 +47,18 @@
  * @param {Function} [options.weightOf] - (item) => area weight, default n.leafCount ?? 1.
  * @param {number} [options.minFactor] - Multiplier on weight for the minimum
  *   area guarantee (headroom against integer-rounding losses). Default 1.
+ * @param {Function} [options.positionOf] - (item) => [x, y] geographic position.
+ *   When provided, items may be reordered and split directions may follow the
+ *   geographic spread (improves geography retention).
+ * @param {string} [options.orderMode] - 'input' | 'hilbert' | 'z' | 'xy' | 'xyDesc'
+ *   | 'yx' | 'yxDesc'. Ordering applied to `items` before layout (default:
+ *   'hilbert' when positionOf is given, else 'input').
+ * @param {string} [options.dirPolicy] - 'aspect' | 'spread' | 'spreadNorm' | 'orderKey'.
+ *   How each split direction is chosen (default: 'spread' when positionOf is
+ *   given, else 'aspect'). 'spreadNorm' compares spreads as a fraction of the
+ *   global geographic extent (see `extent`).
+ * @param {Object} [options.extent] - { x, y } global geographic extents, used by
+ *   'spreadNorm' to normalize spread comparisons.
  * @returns {Map} id -> { r0, c0, r1, c1 }
  */
 export function gridTreemap(items, rect, options = {}) {
@@ -30,6 +66,10 @@ export function gridTreemap(items, rect, options = {}) {
     idOf = (n) => n.id,
     weightOf = (n) => n.leafCount ?? 1,
     minFactor = 1,
+    positionOf = null,
+    orderMode = positionOf ? "hilbert" : "input",
+    dirPolicy = positionOf ? "spread" : "aspect",
+    extent = null,
   } = options;
 
   const rW = rect.c1 - rect.c0 + 1;
@@ -38,8 +78,46 @@ export function gridTreemap(items, rect, options = {}) {
 
   const list = items.map((n) => {
     const w = Math.max(1, weightOf(n));
-    return { id: idOf(n), raw: w, min: Math.ceil(w * minFactor) };
+    return {
+      id: idOf(n),
+      raw: w,
+      min: Math.ceil(w * minFactor),
+      pos: positionOf ? positionOf(n) : null,
+    };
   });
+
+  if (positionOf && orderMode !== "input") {
+    let orderIdx = null;
+    if (orderMode === "hilbert") {
+      orderIdx = orderByHilbert(items, positionOf);
+    } else if (orderMode === "z") {
+      orderIdx = orderByMorton(items, positionOf);
+    } else if (SPEC_ORDER[orderMode]) {
+      const specs = SPEC_ORDER[orderMode];
+      orderIdx = items
+        .map((n, i) => {
+          const p = positionOf(n);
+          const o = { i };
+          specs.forEach((s, k) => {
+            o["k" + k] = s.dir * p[s.axis];
+          });
+          return o;
+        })
+        .sort((a, b) => {
+          for (let k = 0; k < specs.length; k++) {
+            const d = a["k" + k] - b["k" + k];
+            if (d) return d;
+          }
+          return a.i - b.i;
+        })
+        .map((o) => o.i);
+    }
+    if (orderIdx) {
+      const reordered = orderIdx.map((i) => list[i]);
+      list.length = 0;
+      list.push(...reordered);
+    }
+  }
 
   const rawSum = list.reduce((s, x) => s + x.raw, 0);
   const minSum = list.reduce((s, x) => s + x.min, 0);
@@ -87,7 +165,47 @@ export function gridTreemap(items, rect, options = {}) {
     }
     const w = r.c1 - r.c0 + 1;
     const h = r.r1 - r.r0 + 1;
-    const dirs = w >= h ? ["v", "h"] : ["h", "v"];
+
+    // Split direction policy:
+    //  - 'aspect'   : split the longer rect side (classic treemap).
+    //  - 'spread'   : follow the geographic spread of this slice's items.
+    //  - 'orderKey' : follow the primary key of the chosen ordering.
+    let dirs;
+    if (dirPolicy === "aspect" || !list[from].pos) {
+      dirs = w >= h ? ["v", "h"] : ["h", "v"];
+    } else if (dirPolicy === "spread") {
+      let minX = Infinity,
+        maxX = -Infinity,
+        minY = Infinity,
+        maxY = -Infinity;
+      for (let i = from; i < to; i++) {
+        const [x, y] = list[i].pos;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      dirs = maxX - minX >= maxY - minY ? ["v", "h"] : ["h", "v"];
+    } else if (dirPolicy === "spreadNorm") {
+      let minX = Infinity,
+        maxX = -Infinity,
+        minY = Infinity,
+        maxY = -Infinity;
+      for (let i = from; i < to; i++) {
+        const [x, y] = list[i].pos;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      const fx = (maxX - minX) / Math.max(1e-12, extent?.x ?? maxX - minX);
+      const fy = (maxY - minY) / Math.max(1e-12, extent?.y ?? maxY - minY);
+      dirs = fx >= fy ? ["v", "h"] : ["h", "v"];
+    } else {
+      // 'orderKey': follow the primary axis of the chosen ordering.
+      dirs =
+        orderMode === "yx" || orderMode === "yxDesc" ? ["h", "v"] : ["v", "h"];
+    }
 
     let chosen = null; // { s, pos, dir }
     for (const dir of dirs) {

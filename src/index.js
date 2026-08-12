@@ -31,6 +31,7 @@ export {
 } from "./hierarchy/hierarchy-tree.js";
 export { gridTreemap, rectArea } from "./hierarchy/grid-treemap.js";
 export { packLeavesIntoBlock } from "./hierarchy/footprint-packer.js";
+export { hilbertIndex, orderByHilbert } from "./hierarchy/spatial-order.js";
 
 // Dorling/Demers Cartogram exports
 export {

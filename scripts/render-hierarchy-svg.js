@@ -4,7 +4,8 @@
  * mosaic (villages inside kecamatan blocks inside kabupaten blocks) can be
  * inspected visually.
  *
- * Run: node scripts/render-hierarchy-svg.js [cap] [outfile]
+ * Run: node scripts/render-hierarchy-svg.js [cap] [outfile] [order]
+ *   order: 'spatial' (default) | 'input'
  */
 import fs from "fs";
 import glpkImport from "glpk.js";
@@ -42,6 +43,7 @@ async function main() {
       ? Number(process.argv[2])
       : 4000;
   const out = process.argv[3] || "demo/hierarchy-render.svg";
+  const order = process.argv[4] || "spatial";
   const glpk = await glpkImport();
 
   const geo = JSON.parse(fs.readFileSync(`${GEO}/kel_desa.geojson`, "utf8"));
@@ -64,6 +66,7 @@ async function main() {
     yAccessor: (d) => d.y,
     mip: () => new GLPKSolver(glpk),
     compactness: 0.5,
+    order,
   });
 
   const blocks = collectBlocks(result.hierarchy);

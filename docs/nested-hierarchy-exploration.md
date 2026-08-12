@@ -368,8 +368,57 @@ Validation scripts: `scripts/probe-hierarchy.js` (timing + containment),
 - **M3 — scaling hardening:** quadtree/Barnes–Hut for the force-sim side
   (O(n²) today), parallel leaf MIPs, lightweight centroid/bbox input
   preprocessing (skip 166 MB polygon payloads), streaming GeoJSON.
-- **Geography retention:** the treemap mosaic is only approximately
-  geographic (ordered by centroid). A "spatially ordered treemap" or anchor
-  placement would preserve relative positions better.
+- **Geography retention (implemented, see §9):** a data-adaptive spatial
+  ordering is now the default (`order: 'spatial'`). The one-axis-vs-balance
+  trade-off is inherent to guillotine area-balance treemaps; a proper
+  path-following Hilbert layout (Wood & Dykes 2008) is the main remaining
+  improvement and a candidate for future work.
 - **Per-level value scaling:** today leaves are one-unit cells; making cell area
   ∝ population (treemap at the leaf level) is a natural extension.
+
+---
+
+## 9. Geography retention (implemented)
+
+### What was added
+
+- `src/hierarchy/spatial-order.js` — `hilbertIndex`, `orderByMorton` (Z-order),
+  and `orderByHilbert` helpers.
+- `gridTreemap` now accepts `positionOf`, `orderMode`, `dirPolicy`, and `extent`:
+  - **orderMode** — `'input' | 'hilbert' | 'z' | 'xy' | 'xyDesc' | 'yx' | 'yxDesc'`
+    (sort items before the area-balance layout).
+  - **dirPolicy** — `'aspect' | 'spread' | 'spreadNorm' | 'orderKey'` (how each
+    split direction is chosen).
+- `allocateHierarchical` accepts `order: 'spatial' | 'input'` (default
+  `'spatial'`) with advanced overrides `orderMode` / `dirPolicy`.
+
+### Default (data-adaptive)
+
+Wider-than-tall maps (like Indonesia) → `orderMode: 'xy'`, `dirPolicy:
+'spreadNorm'` (east–west first, then north–south within each region).
+Taller-than-wide maps → `orderMode: 'yxDesc'`, `dirPolicy: 'spreadNorm'`
+(north–south first).
+
+### Measured improvement (Spearman geo↔cell, north=top)
+
+| Layer             | `input` mean | `spatial` mean | X / Y (spatial) |
+| ----------------- | -----------: | -------------: | --------------: |
+| kecamatan (7,275) |        0.361 |      **0.495** |   0.764 / 0.227 |
+| kel_desa (15,000) |        0.177 |      **0.552** |   0.766 / 0.338 |
+
+Containment and determinism are unaffected; the full 83,518-village run still
+passes 100% containment in ~16.7 s (and the spatial ordering reduced the number
+of sub-divided leaf blocks from 241 to 153).
+
+### Known trade-off
+
+A guillotine **area-balance** treemap can make **one axis near-perfect** (`xy`
+→ X≈0.997; `yxDesc` → Y≈0.978) but cannot preserve both axes strongly, because
+a single global sort can't be consistent with adaptive two-axis guillotine cuts.
+`spreadNorm` gives the best balance (both axes positive) and is the default.
+Z-order + `spreadNorm` is the most even (X≈0.43, Y≈0.36) and can be selected via
+`orderMode: 'z'`. A path-following Hilbert layout would be the principled fix
+but is deferred.
+
+Visuals: `demo/hierarchy-render-spatial.svg` / `-input.svg` (same grid size,
+directly comparable) and `-zoom` variants. Metric: `scripts/measure-geography.js`.
