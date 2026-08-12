@@ -66,12 +66,16 @@ const PACK_WORKER_URL = new URL("./pack-worker.js", import.meta.url);
  * @param {Function} [options.islandAccessor] - (feature) => island id (optional;
  *   islands are auto-detected from seaGapKm at the root level).
  * @param {number} [options.seaGapKm] - Water-gap threshold in km (default 30).
- * @param {number} [options.seaGutter] - Root-level cells of gap between island
- *   clusters (default 1; 0 disables). Only the ROOT treemap is island-aware;
- *   below that, nesting relies on geographic ordering.
+ * @param {number} [options.seaGutter] - Cells of gap between island clusters,
+ *   applied at EVERY coarse treemap level (default 1; 0 disables). Gutter size
+ *   adapts to the available block so it never causes underfill; the root grid is
+ *   additionally inflated by gutter headroom so full-size root gutters fit.
  * @param {number} [options.smallBlockThreshold] - Greedy pack below this (default 6).
  * @param {string} [options.orderMode] - Advanced treemap ordering override.
  * @param {string} [options.dirPolicy] - Advanced treemap direction override.
+ * @param {string} [options.layoutMode] - 'split' (default) | 'hilbertPath'.
+ *   'hilbertPath' uses the path-following Hilbert layout (Wood & Dykes 2008) at
+ *   every treemap level for better two-axis geography retention.
  * @param {number} [options.concurrency] - Worker-thread parallelism for the
  *   independent leaf-packing MIPs (default 0 = auto in Node; browser falls
  *   back to sequential). Set 1 to force sequential.
@@ -110,6 +114,7 @@ export async function allocateHybridHierarchical(features, options = {}) {
     smallBlockThreshold = 6,
     orderMode = null,
     dirPolicy = null,
+    layoutMode = "split",
     concurrency = 0,
     onProgress = null,
   } = options;
@@ -183,6 +188,7 @@ export async function allocateHybridHierarchical(features, options = {}) {
     minFactor,
     orderMode,
     dirPolicy,
+    layoutMode,
   );
 
   // ---- Phase A: assign coarse blocks (roots → group nodes) ----
@@ -192,53 +198,32 @@ export async function allocateHybridHierarchical(features, options = {}) {
     if (node.children.length === 0) return;
     if (node.level >= groupLevelIndex) return; // children are containers → Phase B
     const children = node.children;
-    const subBlocks = gridTreemap(children, block, {
-      ...makeTreemapOpts(children),
-      weightOf: (n) => n.leafCount,
-    });
+    const subBlocks = layoutIslandsInRect(
+      children,
+      block,
+      makeTreemapOpts(children),
+      {
+        areaOf: (n) => n.leafCount,
+        islandAccessor,
+        seaGapKm,
+        seaGutter,
+      },
+    );
     for (const c of children) assignCoarse(c, subBlocks.get(c.id), node._path);
   };
 
-  if (islandGroups) {
-    // Two-level root layout: islands first (with sea gutter), then members.
-    const islandNodes = [...islandGroups.entries()].map(
-      ([islandId, members]) => {
-        const cx =
-          members.reduce((s, m) => s + m.centroid[0], 0) / members.length;
-        const cy =
-          members.reduce((s, m) => s + m.centroid[1], 0) / members.length;
-        const area = members.reduce((s, m) => s + m.leafCount, 0);
-        return {
-          id: `island_${islandId}`,
-          members,
-          centroid: [cx, cy],
-          area,
-          requested: area + 6 * seaGutter * Math.sqrt(area),
-        };
-      },
-    );
-    const islandBlocks = gridTreemap(islandNodes, globalRect, {
-      ...makeTreemapOpts(islandNodes),
-      weightOf: (n) => n.requested,
-    });
-    for (const inode of islandNodes) {
-      const ib = islandBlocks.get(inode.id);
-      let usable = insetRect(ib, seaGutter);
-      if (rectArea(usable) < inode.area) usable = ib; // too tight: no gutter
-      const memberBlocks = gridTreemap(inode.members, usable, {
-        ...makeTreemapOpts(inode.members),
-        weightOf: (n) => n.leafCount,
-      });
-      for (const m of inode.members)
-        assignCoarse(m, memberBlocks.get(m.id), []);
-    }
-  } else {
-    const rootBlocks = gridTreemap(roots, globalRect, {
-      ...makeTreemapOpts(roots),
-      weightOf: (n) => n.leafCount,
-    });
-    for (const r of roots) assignCoarse(r, rootBlocks.get(r.id), []);
-  }
+  const rootBlocks = layoutIslandsInRect(
+    roots,
+    globalRect,
+    makeTreemapOpts(roots),
+    {
+      areaOf: (n) => n.leafCount,
+      islandAccessor,
+      seaGapKm,
+      seaGutter,
+    },
+  );
+  for (const r of roots) assignCoarse(r, rootBlocks.get(r.id), []);
 
   // ---- Phase B: local value-scaled mosaic inside each group block ----
   const groups = [];
@@ -468,7 +453,7 @@ export async function allocateHybridHierarchical(features, options = {}) {
 // Local container mosaic inside a block
 // ---------------------------------------------------------------------------
 /** Treemap options factory (geography-adaptive to each nodes' own span). */
-function makeTreemapOptsFactory(minFactor, orderMode, dirPolicy) {
+function makeTreemapOptsFactory(minFactor, orderMode, dirPolicy, layoutMode) {
   return (nodes) => {
     let a = Infinity,
       b = -Infinity,
@@ -487,9 +472,81 @@ function makeTreemapOptsFactory(minFactor, orderMode, dirPolicy) {
       positionOf: (n) => n.centroid,
       orderMode: orderMode ?? (asp >= 1 ? "xy" : "yxDesc"),
       dirPolicy: dirPolicy ?? "spreadNorm",
+      layoutMode,
       extent: { x: Math.max(1e-12, b - a), y: Math.max(1e-12, d - c) },
     };
   };
+}
+
+/**
+ * Layout `nodes` into `rect` with ISLAND-AWARE two-level treemapping at any
+ * level (per-level sea gutters). Islands are detected from `seaGapKm`, laid out
+ * first (with a gutter between clusters), then each island's members inside its
+ * usable inset block. The gutter is ADAPTIVE: it is clamped so the total
+ * requested area (members + gutters) never exceeds the rect, so per-level
+ * gutters never cause underfill even when the parent block is tight.
+ *
+ * @returns {Map} id -> block rect for every node.
+ */
+function layoutIslandsInRect(nodes, rect, baseOpts, o) {
+  const { areaOf, islandAccessor, seaGapKm, seaGutter } = o;
+  let islandInfo = null;
+  if (islandAccessor || (seaGapKm > 0 && nodes.length > 1)) {
+    islandInfo = detectIslands(nodes, {
+      positionOf: (n) => n.centroid,
+      islandAccessor,
+      seaGapKm,
+    });
+  }
+  const have = rectArea(rect);
+  if (!islandInfo || islandInfo.groups.size <= 1 || seaGutter <= 0) {
+    return gridTreemap(nodes, rect, { ...baseOpts, weightOf: areaOf });
+  }
+
+  const groups = new Map();
+  islandInfo.ids.forEach((island, i) => {
+    if (!groups.has(island)) groups.set(island, []);
+    groups.get(island).push(nodes[i]);
+  });
+  const membersArea = nodes.reduce((s, m) => s + areaOf(m), 0);
+  const sumSqrt = [...groups.values()].reduce(
+    (s, ms) => s + Math.sqrt(ms.reduce((t, m) => t + areaOf(m), 0)),
+    0,
+  );
+  const maxG = sumSqrt > 0 ? (have - membersArea) / (6 * sumSqrt) : 0;
+  // Adaptive gutter, floored to whole cells: gutters are measured in cells, so a
+  // fractional gutter would produce fractional inset blocks and break the
+  // integer-cell containment guarantees downstream.
+  const g = Math.max(0, Math.floor(Math.min(seaGutter, maxG)));
+
+  const islandNodes = [...groups.entries()].map(([islandId, members]) => {
+    const cx = members.reduce((s, m) => s + m.centroid[0], 0) / members.length;
+    const cy = members.reduce((s, m) => s + m.centroid[1], 0) / members.length;
+    const area = members.reduce((s, m) => s + areaOf(m), 0);
+    return {
+      id: `island_${islandId}`,
+      members,
+      centroid: [cx, cy],
+      area,
+      requested: area + 6 * g * Math.sqrt(area),
+    };
+  });
+  const islandBlocks = gridTreemap(islandNodes, rect, {
+    ...baseOpts,
+    weightOf: (n) => n.requested,
+  });
+  const blocks = new Map();
+  for (const inode of islandNodes) {
+    const ib = islandBlocks.get(inode.id);
+    let usable = insetRect(ib, g);
+    if (rectArea(usable) < inode.area) usable = ib; // too tight: no gutter
+    const memberBlocks = gridTreemap(inode.members, usable, {
+      ...baseOpts,
+      weightOf: areaOf,
+    });
+    for (const m of inode.members) blocks.set(m.id, memberBlocks.get(m.id));
+  }
+  return blocks;
 }
 
 function layoutContainerMosaic(members, block, shapeType, o) {

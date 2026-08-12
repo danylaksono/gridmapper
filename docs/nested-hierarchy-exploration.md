@@ -417,8 +417,10 @@ A guillotine **area-balance** treemap can make **one axis near-perfect** (`xy`
 a single global sort can't be consistent with adaptive two-axis guillotine cuts.
 `spreadNorm` gives the best balance (both axes positive) and is the default.
 Z-order + `spreadNorm` is the most even (X≈0.43, Y≈0.36) and can be selected via
-`orderMode: 'z'`. A path-following Hilbert layout would be the principled fix
-but is deferred.
+`orderMode: 'z'`. The principled fix — a path-following Hilbert layout — is now
+implemented (`layoutMode: 'hilbertPath'`, **see §16**): it retains BOTH axes
+simultaneously (X≈0.58, Y≈0.66 at the 7,275-kecamatan scale) and is the new
+best mean.
 
 Visuals: `demo/hierarchy-render-spatial.svg` / `-input.svg` (same grid size,
 directly comparable) and `-zoom` variants. Metric: `scripts/measure-geography.js`.
@@ -747,9 +749,9 @@ Dorling-fit inside the group block, village cells inside the shape).
   ~2 min: the Dorling runs per small group (~14 kecamatan avg) instead of over
   all 7,276 kecamatan globally.
 - Only the ROOT treemap is island-aware; below that, nesting relies on the
-  geographic ordering. Per-level island gutters are a possible refinement.
+  geographic ordering. Per-level island gutters are now implemented — **see §16**.
 - Renders: `demo/hybrid-rect.svg`, `demo/hybrid-circle.svg`,
-  `demo/hybrid-hex.svg`.
+  `demo/hybrid-hex.svg`, `demo/hybrid-hilbert-rect.svg` (path-following Hilbert).
 
 ### API
 
@@ -767,3 +769,66 @@ const res = await allocateHybridHierarchical(villages, {
 // res.shapes[i]: kecamatan shape (rect → .block; circle/hex → .bbox/.polygon)
 // res.assignments[i]: { ...village, _shape, _path: [provinsi, kabupaten, kecamatan], gridX, gridY }
 ```
+
+---
+
+## 16. Per-level island gutters + path-following Hilbert
+
+Two refinements to the hybrid allocator (and the treemap core):
+
+### 16.1 Per-level island gutters
+
+Previously only the ROOT treemap of the hybrid was island-aware. Now
+`layoutIslandsInRect` applies the same two-level (islands → members) layout at
+**every** coarse treemap level, so multi-island provinces (e.g. Maluku, Papua)
+get a sea gutter between their island clusters too.
+
+Key detail — the gutter is **adaptive and integer**: `g = max(0, floor(min(
+seaGutter, (blockArea − membersArea) / (6·Σ√area))))`, so the requested area
+(members + gutters) never exceeds the parent block (no underfill) and the inset
+blocks stay on integer cells. (A fractional gutter produced fractional blocks
+and broke the integer containment check — fixed by flooring.)
+
+Measured at full scale (83,518 villages / 521 kabupaten / 7,276 kecamatan):
+35 island clusters detected at the root level, 100% containment, no underfill,
+rect ~11.5 s.
+
+### 16.2 Path-following Hilbert (`layoutMode: 'hilbertPath'`)
+
+`gridTreemap` gains a `layoutMode` option:
+
+- `'split'` (default) — the classic guillotine area-balance treemap.
+- `'hilbertPath'` — a true path-following layout (Wood & Dykes 2008). Items are
+  ordered by a Hilbert curve, and the rect is recursively subdivided into the
+  four quadrants **in the curve's visit order** (BL→TL→TR→BR, matching the
+  standard `xy2d` curve that starts south-west), giving each quadrant a
+  contiguous segment proportional to its area. Contiguous Hilbert-order runs
+  therefore land in contiguous Hilbert quadrants — retaining **both** geography
+  axes instead of the one-axis-vs-balance trade-off of `split`. Falls back to
+  `split` for infeasible/tight sub-blocks.
+
+Plumbed through every allocator: `gridTreemap`, `allocateHierarchical`,
+`allocateMosaicHierarchical`, `allocateHybridHierarchical` (coarse levels + rect
+container mosaic). Probe flag: `--hilbert`.
+
+Geography retention (Spearman geo↔cell, kecamatan layer, north=top):
+
+| layout                                  |         X |         Y |      mean |
+| --------------------------------------- | --------: | --------: | --------: |
+| `split` default (data-adaptive)         |     0.764 |     0.227 |     0.495 |
+| `split` `xy`+`orderKey` (X extreme)     |     0.999 |     0.002 |     0.500 |
+| `split` `yxDesc`+`orderKey` (Y extreme) |     0.070 |     0.978 |     0.524 |
+| **`hilbertPath`**                       | **0.579** | **0.655** | **0.617** |
+
+`hilbertPath` is the best mean AND the most balanced — it keeps both axes
+strong (~0.58 / ~0.66) instead of sacrificing one for the other. At the full
+83,518-village hybrid scale it runs in ~10.9 s (rect) with 100% containment.
+
+### Fixes along the way
+
+- `probe-hybrid.js` / `probe-centroid.js` passed `mip` as an instance; the
+  sequential path needs the factory form `mip: () => new GLPKSolver(glpk)` —
+  fixed.
+- `footprint-packer.js` greedy `nearestFree` could fail on a nearly-full grid
+  (diamond scan stopped at `max(rows, cols)`, but max Manhattan distance is
+  `(rows−1)+(cols−1)`); added a full-cell fallback scan.

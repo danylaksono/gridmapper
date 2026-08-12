@@ -127,6 +127,13 @@ async function main() {
   combos.push(await measure(geo.features, cap, { order: "input" }));
   // data-adaptive default (no overrides)
   combos.push(await measure(geo.features, cap, { order: "spatial" }));
+  // path-following Hilbert (Wood & Dykes 2008) — true two-axis geography
+  combos.push(
+    await measure(geo.features, cap, {
+      order: "spatial",
+      layoutMode: "hilbertPath",
+    }),
+  );
   // spatial order variations
   for (const orderMode of ["hilbert", "z", "xy", "xyDesc", "yx", "yxDesc"]) {
     for (const dirPolicy of ["spread", "spreadNorm", "orderKey", "aspect"]) {
@@ -136,11 +143,11 @@ async function main() {
 
   combos.sort((a, b) => b.mean - a.mean);
   console.log(
-    "rank  order      orderMode  dirPolicy   X      Y      mean    ms",
+    "rank  order      orderMode  dirPolicy   layout     X      Y      mean    ms",
   );
   combos.forEach((c, i) => {
     console.log(
-      `${String(i + 1).padStart(2)}    ${String(c.order ?? "spatial").padEnd(9)} ${String(c.orderMode ?? "input").padEnd(10)} ${String(c.dirPolicy ?? "aspect").padEnd(9)}  ${c.sx.toFixed(3)}  ${c.sy.toFixed(3)}  ${c.mean.toFixed(3)}  ${c.dt}`,
+      `${String(i + 1).padStart(2)}    ${String(c.order ?? "spatial").padEnd(9)} ${String(c.orderMode ?? "input").padEnd(10)} ${String(c.dirPolicy ?? "aspect").padEnd(9)} ${String(c.layoutMode ?? "split").padEnd(10)}  ${c.sx.toFixed(3)}  ${c.sy.toFixed(3)}  ${c.mean.toFixed(3)}  ${c.dt}`,
     );
   });
 }

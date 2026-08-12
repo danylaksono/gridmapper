@@ -114,7 +114,7 @@ async function main() {
     yAccessor: (d) => d.y,
     idAccessor: (d) => d.code ?? d.id,
     weightOf: (d) => d.weight ?? 1,
-    mip: new GLPKSolver(glpk),
+    mip: () => new GLPKSolver(glpk),
   };
 
   const t1 = performance.now();

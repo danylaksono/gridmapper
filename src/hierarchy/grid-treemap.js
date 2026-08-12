@@ -57,6 +57,15 @@ const SPEC_ORDER = {
  *   How each split direction is chosen (default: 'spread' when positionOf is
  *   given, else 'aspect'). 'spreadNorm' compares spreads as a fraction of the
  *   global geographic extent (see `extent`).
+ * @param {string} [options.layoutMode] - 'split' (default) | 'hilbertPath'.
+ *   'split' is the classic guillotine area-balance treemap. 'hilbertPath' is a
+ *   true path-following layout (Wood & Dykes 2008): items are ordered by a
+ *   Hilbert curve and the rect is recursively subdivided into the four quadrants
+ *   in the curve's visit order (BL→TL→TR→BR, matching the standard xy2d curve
+ *   that starts south-west), assigning each quadrant a contiguous segment proportional to its area. This makes contiguous
+ *   Hilbert-order segments map to contiguous Hilbert quadrants, retaining BOTH
+ *   geography axes instead of the one-axis-vs-balance trade-off of 'split'.
+ *   Falls back to 'split' for infeasible/tight sub-blocks. Requires positionOf.
  * @param {Object} [options.extent] - { x, y } global geographic extents, used by
  *   'spreadNorm' to normalize spread comparisons.
  * @returns {Map} id -> { r0, c0, r1, c1 }
@@ -69,6 +78,7 @@ export function gridTreemap(items, rect, options = {}) {
     positionOf = null,
     orderMode = positionOf ? "hilbert" : "input",
     dirPolicy = positionOf ? "spread" : "aspect",
+    layoutMode = "split",
     extent = null,
   } = options;
 
@@ -86,7 +96,13 @@ export function gridTreemap(items, rect, options = {}) {
     };
   });
 
-  if (positionOf && orderMode !== "input") {
+  if (layoutMode === "hilbertPath" && positionOf) {
+    // Path-following layout REQUIRES Hilbert ordering (independent of orderMode).
+    const orderIdx = orderByHilbert(items, positionOf);
+    const reordered = orderIdx.map((i) => list[i]);
+    list.length = 0;
+    list.push(...reordered);
+  } else if (positionOf && orderMode !== "input") {
     let orderIdx = null;
     if (orderMode === "hilbert") {
       orderIdx = orderByHilbert(items, positionOf);
@@ -280,7 +296,106 @@ export function gridTreemap(items, rect, options = {}) {
     }
   }
 
-  split(0, list.length, rect);
+  /**
+   * Path-following Hilbert layout: recursively subdivide the rect into the four
+   * quadrants in the Hilbert curve's visit order (BL→TL→TR→BR) and give each
+   * quadrant a contiguous slice of the Hilbert-ordered list, proportional to the
+   * quadrant's area. Contiguous Hilbert-order runs therefore land in contiguous
+   * Hilbert quadrants, which preserves both geographic axes much better than a
+   * single-sort guillotine cut. Falls back to `split` when a quadrant cannot
+   * hold its slice's minimum areas (tight/odd blocks).
+   */
+  function layoutHilbertPath(from, to, r) {
+    const n = to - from;
+    if (n <= 1) {
+      if (n === 1)
+        result.set(list[from].id, { r0: r.r0, c0: r.c0, r1: r.r1, c1: r.c1 });
+      return;
+    }
+    const w = r.c1 - r.c0 + 1;
+    const h = r.r1 - r.r0 + 1;
+    if (w < 2 || h < 2) {
+      split(from, to, r);
+      return;
+    }
+    const c0 = Math.ceil(w / 2);
+    const c1 = w - c0; // right column width
+    const r0 = Math.ceil(h / 2);
+    const r1 = h - r0; // bottom row height
+    // Hilbert visit order (standard xy2d curve, starts south-west):
+    // bottom-left → top-left → top-right → bottom-right.
+    const quads = [
+      { r0: r0, c0: 0, r1: h - 1, c1: c0 - 1 }, // BL
+      { r0: 0, c0: 0, r1: r0 - 1, c1: c0 - 1 }, // TL
+      { r0: 0, c0: c0, r1: r0 - 1, c1: w - 1 }, // TR
+      { r0: r0, c0: c0, r1: h - 1, c1: w - 1 }, // BR
+    ];
+    const qAreas = quads.map((q) =>
+      Math.max(0, (q.r1 - q.r0 + 1) * (q.c1 - q.c0 + 1)),
+    );
+    const totalArea = w * h;
+    if (totalArea <= 0) {
+      split(from, to, r);
+      return;
+    }
+
+    // Contiguous segment sizes ∝ quadrant areas (largest-remainder).
+    const exact = qAreas.map((a) => (a * n) / totalArea);
+    let sizes = exact.map(Math.floor);
+    let remain = n - sizes.reduce((s, x) => s + x, 0);
+    const ord = exact
+      .map((f, i) => ({ i, f: f - Math.floor(f) }))
+      .sort((a, b) => b.f - a.f || a.i - b.i);
+    for (let k = 0; k < remain; k++) sizes[ord[k % 4].i]++;
+    for (let k = 0; k < 4; k++) if (qAreas[k] === 0) sizes[k] = 0; // empty quadrant
+    let ssum = sizes.reduce((s, x) => s + x, 0);
+    if (ssum !== n) {
+      let bi = 0;
+      for (let k = 1; k < 4; k++) if (qAreas[k] > qAreas[bi]) bi = k;
+      sizes[bi] += n - ssum;
+    }
+
+    const segs = [];
+    let start = from;
+    for (let k = 0; k < 4; k++) {
+      segs.push([start, start + sizes[k]]);
+      start += sizes[k];
+    }
+    // Feasibility: each segment's minimum areas must fit its quadrant.
+    let feasible = true;
+    for (let k = 0; k < 4; k++) {
+      const [s0, s1] = segs[k];
+      if (s1 <= s0) continue;
+      let minSum = 0;
+      for (let i = s0; i < s1; i++) minSum += list[i].min;
+      if (minSum > qAreas[k]) {
+        feasible = false;
+        break;
+      }
+    }
+    if (!feasible) {
+      split(from, to, r);
+      return;
+    }
+
+    for (let k = 0; k < 4; k++) {
+      const [s0, s1] = segs[k];
+      if (s1 <= s0) continue;
+      const q = quads[k];
+      layoutHilbertPath(s0, s1, {
+        r0: r.r0 + q.r0,
+        c0: r.c0 + q.c0,
+        r1: r.r0 + q.r1,
+        c1: r.c0 + q.c1,
+      });
+    }
+  }
+
+  if (layoutMode === "hilbertPath" && positionOf && list.length > 1) {
+    layoutHilbertPath(0, list.length, rect);
+  } else {
+    split(0, list.length, rect);
+  }
   return result; // Map<id, rect>
 }
 

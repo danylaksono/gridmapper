@@ -152,6 +152,15 @@ function nearestFree(ir, ic, rows, cols, used) {
       }
     }
   }
+  // Fallback: the diamond-ring scan can miss the last free cell in a nearly
+  // full grid (max Manhattan distance is (rows-1)+(cols-1), but the rings stop
+  // at max(rows, cols)). Do a full scan to guarantee a cell is found whenever
+  // one exists (rows*cols >= children count is enforced upstream).
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!used.has(`${r}_${c}`)) return [r, c];
+    }
+  }
   throw new Error("greedyPack: no free cell found");
 }
 

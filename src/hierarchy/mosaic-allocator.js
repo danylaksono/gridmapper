@@ -106,6 +106,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     minFactor = 1,
     orderMode = null,
     dirPolicy = null,
+    layoutMode = "split",
     concurrency = 0,
   } = options;
 
@@ -176,6 +177,7 @@ export async function allocateMosaicHierarchical(features, options = {}) {
       minFactor,
       orderMode,
       dirPolicy,
+      layoutMode,
       islandInfo,
       seaGutter,
     );
@@ -393,6 +395,7 @@ function layoutRectMosaic(
   minFactor,
   orderMode,
   dirPolicy,
+  layoutMode,
   islandInfo = null,
   seaGutter = 0,
 ) {
@@ -441,6 +444,7 @@ function layoutRectMosaic(
     positionOf: (n) => n.centroid,
     orderMode: orderMode ?? (aspect >= 1 ? "xy" : "yxDesc"),
     dirPolicy: dirPolicy ?? "spreadNorm",
+    layoutMode,
     extent,
   };
 

@@ -81,6 +81,7 @@ export async function allocateHierarchical(features, options = {}) {
     order = "spatial",
     orderMode = null,
     dirPolicy = null,
+    layoutMode = "split",
     concurrency = 0,
     onProgress = null,
   } = options;
@@ -136,6 +137,7 @@ export async function allocateHierarchical(features, options = {}) {
     orderMode:
       orderMode ?? (spatial ? (aspect >= 1 ? "xy" : "yxDesc") : "input"),
     dirPolicy: dirPolicy ?? (spatial ? "spreadNorm" : "aspect"),
+    layoutMode,
     extent: {
       x: Math.max(1e-12, maxX - minX),
       y: Math.max(1e-12, maxY - minY),

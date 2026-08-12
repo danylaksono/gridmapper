@@ -15,7 +15,8 @@
  * Optionally renders an SVG (group blocks + kecamatan shapes + village cells).
  *
  * Usage:
- *   node scripts/probe-hybrid.js [cap] [shapeType] [--render out.svg]
+ *   node scripts/probe-hybrid.js [cap] [shapeType] [--hilbert] [--render out.svg]
+ *     --hilbert: use the path-following Hilbert treemap (better 2D geography)
  */
 import fs from "fs";
 import glpkImport from "glpk.js";
@@ -224,6 +225,9 @@ async function main() {
   const outfile = renderIdx >= 0 ? process.argv[renderIdx + 1] : null;
   const shapeType =
     process.argv.find((a) => ["rect", "circle", "hex"].includes(a)) ?? "rect";
+  const layoutMode = process.argv.includes("--hilbert")
+    ? "hilbertPath"
+    : "split";
   const glpk = await glpkImport();
 
   const geo = JSON.parse(fs.readFileSync(`${GEO}/kel_desa.geojson`, "utf8"));
@@ -239,15 +243,18 @@ async function main() {
       y,
     };
   });
-  console.log(`features: ${data.length} (kel_desa), shapeType: ${shapeType}\n`);
+  console.log(
+    `features: ${data.length} (kel_desa), shapeType: ${shapeType}, layoutMode: ${layoutMode}\n`,
+  );
 
   const t0 = performance.now();
   const result = await allocateHybridHierarchical(data, {
     levels: LEVELS,
     shapeType,
+    layoutMode,
     xAccessor: (d) => d.x,
     yAccessor: (d) => d.y,
-    mip: new GLPKSolver(glpk),
+    mip: () => new GLPKSolver(glpk),
     seaGapKm: 30,
     seaGutter: 1,
   });
