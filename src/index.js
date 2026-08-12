@@ -38,6 +38,13 @@ export {
   orderByHilbert,
 } from "./hierarchy/spatial-order.js";
 export { detectIslands } from "./hierarchy/islands.js";
+export {
+  extractCentroidRecords,
+  loadCentroidRecords,
+  saveCentroidRecords,
+  mergeAssignmentsToFeatures,
+  centroidOfFeature,
+} from "./hierarchy/centroid-table.js";
 
 // Dorling/Demers Cartogram exports
 export {

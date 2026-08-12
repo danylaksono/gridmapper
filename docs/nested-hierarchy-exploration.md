@@ -577,13 +577,13 @@ deterministic; the quadtree version resolves overlaps as well or better than
 the O(n²) pass. Synthetic dense stress-tests show larger speedups (up to ~3.4×
 at n=6000) because pruning is most effective for well-separated layouts.
 
-### Remaining M3 items (not yet done)
+### Remaining M3 items
 
 - ~~**Parallel leaf MIPs**~~ — **done, see §13**.
-- **Centroid-only inputs** — precompute per-level centroid/bbox tables so the
-  166 MB village polygon payload is never parsed just to allocate; the
-  allocation only needs centroids + parent codes.
-- Streaming GeoJSON for the input read.
+- ~~**Centroid-only inputs**~~ — **done, see §14**.
+- **Streaming GeoJSON** for the raw input read (the centroid table already
+  makes this unnecessary for allocation; still useful if a layer has no
+  precomputed table).
 
 Benchmark: `scripts/benchmark-barneshut.js`. Probe: `scripts/probe-mosaic.js
 [cap] [shapeType] [--render]`.
@@ -622,3 +622,67 @@ and its own GLPK.js WASM instance.
 
 Output is **deterministically identical** to the sequential path (task order
 and per-parent child order are preserved).
+
+---
+
+## 14. M3 — centroid-only inputs (precomputed centroid table)
+
+The allocators never touch polygon geometry — per leaf feature they only need
+an id, a centroid, a weight and the parent-code fields. Yet the kel_desa layer
+is a 166 MB GeoJSON with 83,518 MultiPolygons, and every allocation run used to
+`JSON.parse` all of it just to throw the geometry away. Centroid-only input
+fixes that: the heavy payload is never read by the allocator path.
+
+### What was added
+
+- `src/hierarchy/centroid-table.js`:
+  - `extractCentroidRecords(features, { idAccessor, coordsOf, weightOf,
+    levelKeys, extra, includeBBox })` — copies out only `{ id, x, y, weight,
+    ...parentCodes, ...extra }`; accepts full GeoJSON features **or** already
+    light records, tolerating `.properties` nesting.
+  - `loadCentroidRecords(path)` / `saveCentroidRecords(path, records)` —
+    `.json` (array) or `.jsonl` (NDJSON). NDJSON is streamed line-by-line via
+    `readline`, so even a huge table never lives as one giant string/array.
+  - `mergeAssignmentsToFeatures(features, assignments, { idAccessor,
+    assignmentIdOf, inPlace })` — attaches `gridX/gridY/_path/_shape/...` back
+    onto the **full** features by id, so rendering still has the geometry.
+  - `centroidOfFeature(geometry)` — fast mean-of-vertices centroid (matches the
+    probe scripts' arithmetic mean → cell-for-cell identical output).
+  - Node I/O is dynamically imported (`node:fs`, `node:readline`), so the
+    browser bundle is unaffected; extract/merge are pure and work everywhere.
+- `scripts/build-centroid-table.js` — one-time precompute; writes
+  `kel_desa.centroids.jsonl` (14 MB for 83,518 records).
+- `scripts/probe-centroid.js [cap] [--merge]` — end-to-end: build-if-missing →
+  stream-load centroids → allocate hierarchical + mosaic rect → validate
+  containment; `--merge` also loads the full GeoJSON and attaches the grid back.
+- Exported from `src/index.js`.
+
+### Measured
+
+| step                    | full 83,518 villages                         |
+| ----------------------- | ------------------------------------------- |
+| table load (14 MB NDJSON) | **271 ms** (vs ~2–3 s + ~700 MB to parse the 166 MB GeoJSON) |
+| hierarchical allocation | ~8 s (100% containment)                     |
+| mosaic rect allocation  | ~13.7 s (100% containment)                  |
+| merge-back (20,000, opt) | 20,000/20,000 features got grid fields, geometry preserved |
+
+Disk: **14 MB** table vs **166 MB** GeoJSON (~12× smaller). Memory: the
+allocation path now holds only lightweight records, not 83,518 parsed
+MultiPolygons.
+
+### Usage
+
+```js
+import { loadCentroidRecords, allocateHierarchical } from "gridmapper";
+
+const data = await loadCentroidRecords("kel_desa.centroids.jsonl"); // never touches geometry
+const res = await allocateHierarchical(data, {
+  levels: ["provinsi_code", "kab_kota_code", "kecamatan_code"],
+  xAccessor: (d) => d.x, yAccessor: (d) => d.y,
+  idAccessor: (d) => d.id,
+  mip, // GLPKSolver
+});
+// later, for rendering with real geometry:
+const enriched = mergeAssignmentsToFeatures(fullGeoJsonFeatures, res.assignments,
+  { idAccessor: (d) => d.properties.code, assignmentIdOf: (a) => a.id });
+```
