@@ -36,14 +36,19 @@ export async function runWorkerPool(tasks, workerUrl, options = {}) {
       cpuCount = 4;
     }
   } catch {
-    throw new Error("runWorkerPool: worker_threads is not available in this environment");
+    throw new Error(
+      "runWorkerPool: worker_threads is not available in this environment",
+    );
   }
 
   const n = tasks.length;
   if (n === 0) return [];
   const workers = Math.max(
     1,
-    Math.min(concurrency > 0 ? concurrency : Math.max(1, Math.min(8, cpuCount - 1)), n),
+    Math.min(
+      concurrency > 0 ? concurrency : Math.max(1, Math.min(8, cpuCount - 1)),
+      n,
+    ),
   );
 
   const results = new Array(n);

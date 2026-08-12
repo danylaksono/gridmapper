@@ -149,7 +149,8 @@ export async function allocateHierarchical(features, options = {}) {
     node._block = block;
     node._path = [...path, node.id];
     const isLeafParent =
-      node.children.length > 0 && node.children.every((c) => c.children.length === 0);
+      node.children.length > 0 &&
+      node.children.every((c) => c.children.length === 0);
     if (!isLeafParent) {
       const subBlocks = gridTreemap(node.children, block, treemapOpts);
       for (const child of node.children) {
@@ -162,7 +163,10 @@ export async function allocateHierarchical(features, options = {}) {
   // --- Collect the independent packable units (leaf parents) ---
   const leafParents = [];
   const collect = (node) => {
-    if (node.children.length > 0 && node.children.every((c) => c.children.length === 0)) {
+    if (
+      node.children.length > 0 &&
+      node.children.every((c) => c.children.length === 0)
+    ) {
       leafParents.push(node);
     } else {
       for (const c of node.children) collect(c);
@@ -182,7 +186,11 @@ export async function allocateHierarchical(features, options = {}) {
 
   const packSequential = async () => {
     for (const node of leafParents) {
-      const packed = await packLeavesIntoBlock(node.children, node._block, packOpts);
+      const packed = await packLeavesIntoBlock(
+        node.children,
+        node._block,
+        packOpts,
+      );
       for (const p of packed) {
         assignments.push({ ...p, _path: node._path, _block: node._block });
       }

@@ -11,7 +11,10 @@
  */
 import fs from "fs";
 import glpkImport from "glpk.js";
-import { allocateHierarchical, allocateMosaicHierarchical } from "../src/index.js";
+import {
+  allocateHierarchical,
+  allocateMosaicHierarchical,
+} from "../src/index.js";
 import { GLPKSolver } from "../src/solvers/glpk-solver.js";
 
 const GEO = "D:/personal/github/kopdes/geo/geojson";
@@ -46,7 +49,9 @@ async function runPair(label, fn, concurrency) {
   const t0 = performance.now();
   const res = await fn(concurrency);
   const dt = Math.round(performance.now() - t0);
-  console.log(`  ${label} concurrency=${concurrency}: ${dt}ms  (${res.assignments.length} leaves, ${res.meta.containers ?? res.meta.levels ? "" : ""}${res.shapes ? res.shapes.length + " shapes" : ""})`);
+  console.log(
+    `  ${label} concurrency=${concurrency}: ${dt}ms  (${res.assignments.length} leaves, ${(res.meta.containers ?? res.meta.levels) ? "" : ""}${res.shapes ? res.shapes.length + " shapes" : ""})`,
+  );
   return { res, dt };
 }
 
@@ -80,16 +85,46 @@ async function main() {
 
   // --- hierarchical (grid-in-grid) ---
   console.log("== allocateHierarchical ==");
-  const h1 = await runPair("hierarchical", (c) => allocateHierarchical(data, { ...base, concurrency: c }), 1);
-  const hN = await runPair("hierarchical", (c) => allocateHierarchical(data, { ...base, concurrency: c }), 4);
-  console.log(`  output identical: ${sameOutput(h1.res, hN.res) ? "YES ✓" : "NO ✗"}`);
+  const h1 = await runPair(
+    "hierarchical",
+    (c) => allocateHierarchical(data, { ...base, concurrency: c }),
+    1,
+  );
+  const hN = await runPair(
+    "hierarchical",
+    (c) => allocateHierarchical(data, { ...base, concurrency: c }),
+    4,
+  );
+  console.log(
+    `  output identical: ${sameOutput(h1.res, hN.res) ? "YES ✓" : "NO ✗"}`,
+  );
   console.log(`  speedup: ${(h1.dt / Math.max(1, hN.dt)).toFixed(2)}x`);
 
   // --- mosaic (rect) ---
   console.log("\n== allocateMosaicHierarchical (rect) ==");
-  const m1 = await runPair("mosaic-rect", (c) => allocateMosaicHierarchical(data, { ...base, shapeType: "rect", concurrency: c }), 1);
-  const mN = await runPair("mosaic-rect", (c) => allocateMosaicHierarchical(data, { ...base, shapeType: "rect", concurrency: c }), 4);
-  console.log(`  output identical: ${sameOutput(m1.res, mN.res) ? "YES ✓" : "NO ✗"}`);
+  const m1 = await runPair(
+    "mosaic-rect",
+    (c) =>
+      allocateMosaicHierarchical(data, {
+        ...base,
+        shapeType: "rect",
+        concurrency: c,
+      }),
+    1,
+  );
+  const mN = await runPair(
+    "mosaic-rect",
+    (c) =>
+      allocateMosaicHierarchical(data, {
+        ...base,
+        shapeType: "rect",
+        concurrency: c,
+      }),
+    4,
+  );
+  console.log(
+    `  output identical: ${sameOutput(m1.res, mN.res) ? "YES ✓" : "NO ✗"}`,
+  );
   console.log(`  speedup: ${(m1.dt / Math.max(1, mN.dt)).toFixed(2)}x`);
 }
 

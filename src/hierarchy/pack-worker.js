@@ -62,7 +62,11 @@ async function handle(payload) {
 parentPort.on("message", async (msg) => {
   try {
     const result = await handle(msg.payload);
-    parentPort.postMessage({ type: "result", taskIndex: msg.taskIndex, result });
+    parentPort.postMessage({
+      type: "result",
+      taskIndex: msg.taskIndex,
+      result,
+    });
   } catch (e) {
     parentPort.postMessage({
       type: "error",

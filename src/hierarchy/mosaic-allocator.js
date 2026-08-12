@@ -25,7 +25,9 @@ import { GridMapper } from "../core/grid-mapper.js";
 import { buildHierarchy } from "./hierarchy-tree.js";
 import { gridTreemap, rectArea } from "./grid-treemap.js";
 import { packLeavesIntoBlock } from "./footprint-packer.js";
-import { detectIslands } from "./islands.js";import { runWorkerPool } from '../utils/parallel.js';import { SpacerUtils } from "../features/spacer-utils.js";
+import { detectIslands } from "./islands.js";
+import { runWorkerPool } from "../utils/parallel.js";
+import { SpacerUtils } from "../features/spacer-utils.js";
 import { normalizePointsToGrid } from "../normalization/point-normalizer.js";
 import {
   solveAdvancedAllocation,
@@ -39,7 +41,7 @@ import {
   createHexagonCoordinates,
   createRectangleCoordinates,
 } from "../cartogram/shape-generator.js";
-const PACK_WORKER_URL = new URL('./pack-worker.js', import.meta.url);
+const PACK_WORKER_URL = new URL("./pack-worker.js", import.meta.url);
 /**
  * @param {Array} features - Finest-level features (e.g. villages).
  * @param {Object} options
@@ -257,7 +259,12 @@ export async function allocateMosaicHierarchical(features, options = {}) {
     if (shape.type === "rect") {
       return packLeavesIntoBlock(n.children, shape.block, packOpts);
     }
-    return packIntoShape(n.children, shape, { mip, xAccessor, yAccessor, compactness });
+    return packIntoShape(n.children, shape, {
+      mip,
+      xAccessor,
+      yAccessor,
+      compactness,
+    });
   };
 
   const packSequential = async () => {
@@ -285,7 +292,9 @@ export async function allocateMosaicHierarchical(features, options = {}) {
         smallBlockThreshold,
       },
     }));
-    const results = await runWorkerPool(tasks, PACK_WORKER_URL, { concurrency });
+    const results = await runWorkerPool(tasks, PACK_WORKER_URL, {
+      concurrency,
+    });
     containers.forEach((n, i) => {
       const shape = n._shape;
       if (shape.type !== "rect" && results[i].length) {

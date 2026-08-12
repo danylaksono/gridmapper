@@ -613,12 +613,12 @@ and its own GLPK.js WASM instance.
 
 ### Measured
 
-| case | sequential | parallel (4) | speedup | output identical |
-|---|---:|---:|---:|:--:|
-| hierarchical, 12,000 villages | 5,794 ms | 2,208 ms | **2.6×** | ✓ |
-| mosaic rect, 12,000 villages | 5,571 ms | 2,172 ms | **2.6×** | ✓ |
-| mosaic circle, 10,000 (200 iter) | 14,376 ms | 11,876 ms | **1.2×** | ✓ |
-| full rect mosaic, 83,518 | ~17–50 s | **~12.7 s** | 1.4–4× | ✓ |
+| case                             | sequential | parallel (4) |  speedup | output identical |
+| -------------------------------- | ---------: | -----------: | -------: | :--------------: |
+| hierarchical, 12,000 villages    |   5,794 ms |     2,208 ms | **2.6×** |        ✓         |
+| mosaic rect, 12,000 villages     |   5,571 ms |     2,172 ms | **2.6×** |        ✓         |
+| mosaic circle, 10,000 (200 iter) |  14,376 ms |    11,876 ms | **1.2×** |        ✓         |
+| full rect mosaic, 83,518         |   ~17–50 s |  **~12.7 s** |   1.4–4× |        ✓         |
 
 Output is **deterministically identical** to the sequential path (task order
 and per-parent child order are preserved).
